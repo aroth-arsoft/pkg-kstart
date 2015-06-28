@@ -1,3 +1,9 @@
+kstart (4.1-3.2~aroth~ppa1) vivid; urgency=medium
+
+  * fixed run-as-daemon
+
+ -- Andreas Roth <aroth@arsoft-online.com>  Sun, 28 Jun 2015 13:12:56 +0200
+
 kstart (4.1-3.1~aroth~ppa1) vivid; urgency=medium
 
   * integrate the latest upstream changes

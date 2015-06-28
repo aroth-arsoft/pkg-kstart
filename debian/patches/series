@@ -1,1 +1,2 @@
 upstream-changes.patch
+fix_run_as_daemon.patch

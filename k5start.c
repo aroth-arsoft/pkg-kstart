@@ -523,7 +523,7 @@ main(int argc, char *argv[])
         die("-a only makes sense with -K or a command to run");
     if (config.background && private.keytab == NULL)
         die("-b option requires a keytab be specified with -f");
-    if (config.background && run_as_daemon)
+    if (config.background && !run_as_daemon)
         die("-b only makes sense with -K or a command to run");
     if (config.keep_ticket > 0 && private.keytab == NULL)
         die("-K option requires a keytab be specified with -f");

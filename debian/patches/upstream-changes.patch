@@ -1,0 +1,2291 @@
+diff --git a/LICENSE b/LICENSE
+index 531bb96..c880f45 100644
+--- a/LICENSE
++++ b/LICENSE
+@@ -41,7 +41,7 @@ Collected copyright notices for the entire package:
+   Copyright 1991, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002,
+       2003 by The Internet Software Consortium and Rich Salz
+   Copyright 2000, 2001, 2004, 2006, 2007, 2008, 2009, 2010, 2011
+-      Russ Allbery <rra@stanford.edu>
++      Russ Allbery <eagle@eyrie.org>
+   Copyright 1995 Patrick Powell
+   Copyright 1996, 1997 Brandon Long <blong@fiction.net>
+   Copyright 1998 Thomas Roessler <roessler@guug.de>
+@@ -74,13 +74,13 @@ covered by the following statement:
+ 
+ In other words, you can do anything you wish with this code, although I
+ would strongly prefer that any improvements or modifications be sent to me
+-(rra@stanford.edu) so that I can continue to maintain a canonical version.
++(eagle@eyrie.org) so that I can continue to maintain a canonical version.
+ 
+ The files configure.ac, m4/kafs.m4, m4/krb5.m4, m4/lib-depends.m4,
+ m4/lib-pathname.m4,m4/snprintf.m4, and m4/vamacros.m4 are released under
+ the following copyright and license:
+ 
+-  Copyright 1999, 2000, 2001, 2003 Russ Allbery <rra@stanford.edu>
++  Copyright 1999, 2000, 2001, 2003 Russ Allbery <eagle@eyrie.org>
+   Copyright 2005, 2006, 2007, 2008, 2009, 2010, 2011
+       The Board of Trustees of the Leland Stanford Junior University
+   Copyright 2007, 2008 Markus Moeller
+@@ -207,7 +207,7 @@ and license:
+ The file tests/README is released under the following copyright and
+ license:
+ 
+-  Copyright 2010 Russ Allbery <rra@stanford.edu>
++  Copyright 2010 Russ Allbery <eagle@eyrie.org>
+ 
+   Copying and distribution of this file, with or without modification, are
+   permitted in any medium without royalty provided the copyright notice
+diff --git a/Makefile.am b/Makefile.am
+index 9a1b347..7c9f3da 100644
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -1,6 +1,6 @@
+ # Automake makefile for kstart.
+ #
+-# Written by Russ Allbery <rra@stanford.edu>
++# Written by Russ Allbery <eagle@eyrie.org>
+ # Copyright 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
+ #    2011 The Board of Trustees of the Leland Stanford Junior University
+ #
+diff --git a/NEWS b/NEWS
+index e6222c4..3b02cc6 100644
+--- a/NEWS
++++ b/NEWS
+@@ -1,5 +1,27 @@
+                        User-Visible kstart Changes
+ 
++kstart 4.2 (unreleased)
++
++    k5start, when run with the -K option to run as a daemon, no longer
++    exits if the initial authentication fails (unless -x was given).
++    Instead, it reports the error to standard error and then continues to
++    run, attempting authentication every minute as if authentication had
++    failed after it had started.  Patch from Rasmus Borup Hansen.
++
++    If -i is given to krenew and the initial ticket renewal failed, start
++    with the shorter wake-up interval of one minute just as if a
++    subsequent renewal failed.  Patch from Rasmus Borup Hansen.
++
++    Clean up the temporary ticket cache on k5start failure if -o, -g, or
++    -m were given.  Based on a patch by Rasmus Borup Hansen.
++
++    The -H flag to k5start or krenew may now be used in conjunction with
++    -K and controls whether the ticket is renewed when the command wakes
++    up.  Normally, the ticket will be renewed if it will expire sooner
++    than two minutes after the next time the command will wake up.  If -H
++    is specified, its value replaces the default value of two minutes.
++    Patch from Michael Lass.
++
+ kstart 4.1 (2012-01-07)
+ 
+     Fix a regression introduced in kstart 4.0 that caused k5start -H and
+@@ -112,7 +134,7 @@ kstart 4.0 (2011-12-29)
+     * Improve test summary at the end of a C test case.
+     * Flush stderr before printing TAP output.
+     * Improve portability of output functions in the shell libtap.sh.
+-    * Add notices to all files copied from  C TAP Harness.
++    * Add notices to all files copied from C TAP Harness.
+ 
+ kstart 3.16 (2010-01-19)
+ 
+diff --git a/README b/README
+index 50adbce..6979579 100644
+--- a/README
++++ b/README
+@@ -1,8 +1,8 @@
+                             kstart release 4.1
+-               (kinit daemon that uses srvtabs or keytabs)
++           (kinit daemon with keytab, renewal, and AFS support)
+ 
+          Originally written by Robert Morgan and Booker C. Bense
+-         Currently maintained by Russ Allbery <rra@stanford.edu>
++          Currently maintained by Russ Allbery <eagle@eyrie.org>
+ 
+   Copyright 1995, 1996, 1997, 1999, 2000, 2001, 2002, 2004, 2005, 2006,
+   2007, 2008, 2009, 2010, 2011, 2012 The Board of Trustees of the Leland
+diff --git a/TODO b/TODO
+index dd1bc5a..6b0da17 100644
+--- a/TODO
++++ b/TODO
+@@ -8,9 +8,6 @@ k5start:
+  * Provide a flag like -H that checks the status of the ticket but
+    just exits with a zero or non-zero exit status instead of prompting.
+ 
+- * Add support to k5start for obtaining Kerberos v4 tickets using the DES
+-   key in a keytab.
+-
+  * Add a flag saying to start a command in a PAG and with tokens and then
+    keep running even if the command exits.  This would be useful to spawn
+    a long-running daemon inside a PAG and then maintain its tokens, even
+@@ -23,6 +20,25 @@ k5start:
+    command has been started, so it can simply exit after spawning the
+    command.
+ 
++ * Add a flag to keep reprompting for the password until authentication
++   succeeds.
++
++ * Use krb5_get_init_creds_opt_set_out_ccache to store the ticket cache
++   instead of writing the credentials ourselves, since this will store MIT
++   Kerberos configuration information in the cache.
++
++ * Support obtaining new credentials in a DIR cache or another cache type
++   that supports multiple principals without destroying the existing
++   cache.
++
++ * Add a kinstance command to run a command with a particular default
++   principal instead of the default for the cache collection (assuming
++   this is even possible).
++
++ * Determine the actual ticket lifetime from the Kerberos ticket cache and
++   use that to set the wakeup time if -K was not provided, rather than
++   always using a default of one hour.
++
+ krenew:
+ 
+  * Add an option to send SIGHUP to the child process when krenew exits
+@@ -35,10 +51,13 @@ Documentation:
+    Probably take some information from the Stanford web page documenting
+    using tokens with servers.
+ 
++ * Document when various flags and features were added.
++
+ Test suite:
+ 
+  * Test more of krenew's basic functionality, preferrably by parsing klist
+-   output more thoroughly and seeing if tickets really were renewed.
++   output more thoroughly (or using a Perl module that can parse the
++   ticket cache directly) and seeing if tickets really were renewed.
+ 
+  * Test that -K and running a command wakes up periodically and renews
+    tickets for both krenew and k5start.
+diff --git a/configure.ac b/configure.ac
+index 5db7407..bf7df23 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -1,15 +1,16 @@
+ dnl Autoconf configuration for kstart.
+ dnl
+-dnl Written by Russ Allbery <rra@stanford.edu>
++dnl Written by Russ Allbery <eagle@eyrie.org>
+ dnl Copyright 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
+-dnl     2011 The Board of Trustees of the Leland Stanford Junior University
++dnl     2011, 2014
++dnl     The Board of Trustees of the Leland Stanford Junior University
+ dnl
+ dnl This file is free software; the authors give unlimited permission to copy
+ dnl and/or distribute it, with or without modifications, as long as this
+ dnl notice is preserved.
+ 
+ AC_PREREQ([2.64])
+-AC_INIT([kstart], [4.1], [rra@stanford.edu])
++AC_INIT([kstart], [4.1], [eagle@eyrie.org])
+ AC_CONFIG_AUX_DIR([build-aux])
+ AC_CONFIG_LIBOBJ_DIR([portable])
+ AC_CONFIG_MACRO_DIR([m4])
+@@ -19,7 +20,9 @@ AM_MAINTAINER_MODE
+ 
+ AC_PROG_CC
+ AC_USE_SYSTEM_EXTENSIONS
++AC_SYS_LARGEFILE
+ AM_PROG_CC_C_O
++m4_ifdef([AM_PROG_AR], [AM_PROG_AR])
+ AC_PROG_INSTALL
+ AC_PROG_RANLIB
+ 
+diff --git a/framework.c b/framework.c
+index 63cf1d3..7d36704 100644
+--- a/framework.c
++++ b/framework.c
+@@ -19,8 +19,8 @@
+  * information between k5start and krenew.  The code specific to one or the
+  * other is handled via callbacks.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
+- * Copyright 2006, 2007, 2008, 2009, 2010, 2011, 2012
++ * Written by Russ Allbery <eagle@eyrie.org>
++ * Copyright 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2014
+  *     The Board of Trustees of the Leland Stanford Junior University
+  *
+  * See LICENSE for licensing terms.
+@@ -169,7 +169,7 @@ ticket_expired(krb5_context ctx, struct config *config)
+         now = time(NULL);
+         then = outcreds->times.endtime;
+         if (config->happy_ticket > 0)
+-            offset = 60 * config->happy_ticket;
++            offset = 60 * (config->keep_ticket + config->happy_ticket);
+         else
+             offset = 60 * config->keep_ticket + EXPIRE_FUDGE;
+         if (then < now + offset)
+@@ -344,7 +344,6 @@ run_framework(krb5_context ctx, struct config *config)
+     if (config->keep_ticket > 0) {
+         struct timeval timeout;
+ 
+-        code = 0;
+         add_handler(ctx, config, alarm_handler, SIGALRM, "SIGALRM");
+         if (config->command == NULL) {
+             add_handler(ctx, config, exit_handler, SIGHUP, "SIGHUP");
+@@ -368,7 +367,7 @@ run_framework(krb5_context ctx, struct config *config)
+             if (exit_signaled)
+                 exit_cleanup(ctx, config, 0);
+             code = ticket_expired(ctx, config);
+-            if (alarm_signaled || code != 0) {
++            if (alarm_signaled || config->always_renew || code != 0) {
+                 code = config->auth(ctx, config, code);
+                 if (code != 0 && config->exit_errors)
+                     exit_cleanup(ctx, config, 1);
+diff --git a/internal.h b/internal.h
+index 746e66a..894f560 100644
+--- a/internal.h
++++ b/internal.h
+@@ -6,8 +6,8 @@
+  * binaries.  Also defines the config struct that's used as a configuration
+  * interface to run_framework.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
+- * Copyright 2011, 2012
++ * Written by Russ Allbery <eagle@eyrie.org>
++ * Copyright 2011, 2012, 2014
+  *     The Board of Trustees of the Leland Stanford Junior University
+  *
+  * See LICENSE for licensing terms.
+@@ -27,6 +27,7 @@ struct krenew_private;
+ 
+ /* The struct used to pass configuration details to run_framework. */
+ struct config {
++    bool always_renew;          /* Whether to renew on every wakeup. */
+     bool background;            /* Whether to run in the background. */
+     bool clean_cache;           /* Whether to destroy ticket cache at exit. */
+     bool do_aklog;              /* Whether to run aklog. */
+diff --git a/k5start.c b/k5start.c
+index 8169dc9..ae61d45 100644
+--- a/k5start.c
++++ b/k5start.c
+@@ -10,9 +10,9 @@
+  * the Kerberos v5 initialization functions instead.
+  *
+  * Originally written by Robert Morgan and Booker C. Bense.
+- * Substantial updates by Russ Allbery <rra@stanford.edu>
++ * Substantial updates by Russ Allbery <eagle@eyrie.org>
+  * Copyright 1995, 1996, 1997, 1999, 2000, 2001, 2002, 2004, 2005, 2006, 2007,
+- *     2008, 2009, 2010, 2011, 2012
++ *     2008, 2009, 2010, 2011, 2012, 2014
+  *     The Board of Trustees of the Leland Stanford Junior University
+  *
+  * See LICENSE for licensing terms.
+@@ -68,6 +68,7 @@ Usage: k5start [options] [name [command]]\n\
+    -I <service instance>        (default: realm name)\n\
+    -r <service realm>           (default: local realm)\n\
+ \n\
++   -a                   Renew on each wakeup when running as a daemon\n\
+    -b                   Fork and run in the background\n\
+    -c <file>            Write child process ID (PID) to <file>\n\
+    -F                   Force non-forwardable tickets\n\
+@@ -77,7 +78,7 @@ Usage: k5start [options] [name [command]]\n\
+                         less than <limit> minutes, and exit 0 if it's okay,\n\
+                         otherwise obtain a ticket\n\
+    -h                   Display this usage message and exit\n\
+-   -K <interval>        Run as daemon, renew ticket every <interval> minutes\n\
++   -K <interval>        Run as daemon, check ticket every <interval> minutes\n\
+                         (implies -q unless -v is given)\n\
+    -k <file>            Use <file> as the ticket cache\n\
+    -L                   Log messages via syslog as well as stderr\n\
+@@ -167,6 +168,7 @@ authenticate(krb5_context ctx, struct config *config,
+     krb5_creds creds;
+     const char *cache = config->cache;
+     krb5_ccache ccache = NULL;
++    int oerrno;
+ 
+     /*
+      * If we have owner, group, or mode information, we have to create a
+@@ -186,7 +188,9 @@ authenticate(krb5_context ctx, struct config *config,
+         }
+         if (fchmod(fd, 0600) < 0) {
+             syswarn("cannot chmod temporary ticket cache file");
+-            return errno;
++            oerrno = errno;
++            unlink(tmp);
++            return oerrno;
+         }
+         close(fd);
+         cache = tmp;
+@@ -213,7 +217,7 @@ authenticate(krb5_context ctx, struct config *config,
+         if (code != 0) {
+             warn_krb5(ctx, code, "error resolving keytab %s",
+                       private->keytab);
+-            return code;
++            goto done;
+         }
+         code = krb5_get_init_creds_keytab(ctx, &creds, config->client,
+                                           keytab, 0, private->service,
+@@ -234,7 +238,8 @@ authenticate(krb5_context ctx, struct config *config,
+             *p = '\0';
+         else {
+             warn("password too long");
+-            return KRB5_LIBOS_CANTREADPWD;
++            code = KRB5_LIBOS_CANTREADPWD;
++            goto done;
+         }
+         code = krb5_get_init_creds_password(ctx, &creds, config->client,
+                                             buffer, NULL, NULL, 0,
+@@ -274,11 +279,17 @@ authenticate(krb5_context ctx, struct config *config,
+         code = set_permissions(cache, private);
+         if (code != 0)
+             goto done;
+-        if (rename(cache, config->cache) < 0)
++        if (rename(cache, config->cache) < 0) {
+             code = errno;
++            goto done;
++        }
+     }
+ 
+ done:
++    /* If we failed and were generating a separate cache, unlink it. */
++    if (private->set_perms)
++        unlink(cache);
++
+     /* Make sure that we don't free princ; we use it later. */
+     if (creds.client == config->client)
+         creds.client = NULL;
+@@ -375,9 +386,10 @@ main(int argc, char *argv[])
+     struct group *gr;
+     krb5_context ctx;
+     krb5_deltat life_secs;
++    bool run_as_daemon;
+     bool search_keytab = false;
+     static const char optstring[]
+-        = "bc:Ff:g:H:hI:i:K:k:Ll:m:no:Pp:qr:S:stUu:vx";
++        = "abc:Ff:g:H:hI:i:K:k:Ll:m:no:Pp:qr:S:stUu:vx";
+ 
+     /* Initialize logging. */
+     message_program_name = "k5start";
+@@ -391,6 +403,7 @@ main(int argc, char *argv[])
+     private.group = (gid_t) -1;
+     while ((opt = getopt(argc, argv, optstring)) != EOF)
+         switch (opt) {
++        case 'a': config.always_renew = true;   break;
+         case 'b': config.background = true;     break;
+         case 'c': config.childfile = optarg;    break;
+         case 'F': nonforwardable = true;        break;
+@@ -432,6 +445,7 @@ main(int argc, char *argv[])
+             config.keep_ticket = convert_number(optarg, 10);
+             if (config.keep_ticket <= 0)
+                 die("-K interval argument %s invalid", optarg);
++            config.ignore_errors = true;
+             break;
+         case 'L':
+             openlog(message_program_name, LOG_PID, LOG_DAEMON);
+@@ -492,6 +506,10 @@ main(int argc, char *argv[])
+     if (argc >= 1)  
+         config.command = argv;
+ 
++    /* If -x was given, we still want to exit on initial auth failure. */
++    if (config.exit_errors)
++        config.ignore_errors = false;
++
+     /*
+      * If an owner was provided but no group, and the owner was given as a
+      * username, set the group to the primary group of that user.
+@@ -500,9 +518,12 @@ main(int argc, char *argv[])
+         private.group = pw->pw_gid;
+ 
+     /* Check the arguments for consistency. */
++    run_as_daemon = (config.keep_ticket != 0 || config.command != NULL);
++    if (config.always_renew && run_as_daemon)
++        die("-a only makes sense with -K or a command to run");
+     if (config.background && private.keytab == NULL)
+         die("-b option requires a keytab be specified with -f");
+-    if (config.background && config.keep_ticket == 0 && config.command == NULL)
++    if (config.background && run_as_daemon)
+         die("-b only makes sense with -K or a command to run");
+     if (config.keep_ticket > 0 && private.keytab == NULL)
+         die("-K option requires a keytab be specified with -f");
+@@ -517,8 +538,6 @@ main(int argc, char *argv[])
+         die("-U option requires a keytab be specified with -f");
+     if (search_keytab && (principal != NULL || inst != NULL))
+         die("-U option cannot be used with -u or -i options");
+-    if (config.happy_ticket > 0 && config.keep_ticket > 0)
+-        die("-H and -K options cannot be used at the same time");
+     if (config.happy_ticket > 0 && config.command != NULL)
+         die("-H option cannot be used with a command");
+     if (config.childfile != NULL && config.command == NULL)
+diff --git a/k5start.pod b/k5start.pod
+index ec4ce60..975008e 100644
+--- a/k5start.pod
++++ b/k5start.pod
+@@ -9,14 +9,14 @@ k5start - Obtain and optionally keep active a Kerberos ticket
+ 
+ =head1 SYNOPSIS
+ 
+-B<k5start> [B<-bFhLnPqstvx>] [B<-c> I<child pid file>] [B<-f> I<keytab>]
++B<k5start> [B<-abFhLnPqstvx>] [B<-c> I<child pid file>] [B<-f> I<keytab>]
+     [B<-g> I<group>] [B<-H> I<minutes>] [B<-I> I<service instance>]
+     [B<-i> I<client instance>] [B<-K> I<minutes>] [B<-k> I<ticket cache>]
+     [B<-l> I<time string>] [B<-m> I<mode>] [B<-o> I<owner>]
+     [B<-p> I<pid file>] [B<-r> I<service realm>] [B<-S> I<service name>]
+-    [B<-u> I<client principal>] [I<username> [I<command> ...]]
++    [B<-u> I<client principal>] [I<principal> [I<command> ...]]
+ 
+-B<k5start> B<-U> B<-f> I<keytab> [B<-bFhLnPqstvx>] [B<-c> I<child pid file>]
++B<k5start> B<-U> B<-f> I<keytab> [B<-abFhLnPqstvx>] [B<-c> I<child pid file>]
+     [B<-g> I<group>] [B<-H> I<minutes>] [B<-I> I<service instance>]
+     [B<-K> I<minutes>] [B<-k> I<ticket cache>] [B<-l> I<time string>]
+     [B<-m> I<mode>] [B<-o> I<owner>] [B<-p> I<pid file>]
+@@ -31,11 +31,11 @@ keytab to obtain Kerberos credentials, such as a web server that needs to
+ authenticate to another service such as an LDAP server.
+ 
+ Normally, the principal for which to give tickets should be specified as
+-the first argument.  I<username> may be either just a principal name
++the first argument.  I<principal> may be either just a principal name
+ (including the optional instance) or a full principal and realm string.
+ The B<-u> and B<-i> options can be used as an alternative mechanism for
+ specifying the principal, but generally aren't as convenient.  If no
+-username is given as either the first argument or the argument to the
++principal is given as either the first argument or the argument to the
+ B<-u> option, the client principal defaults to the Unix username of the
+ user running B<k5start> in the default local realm.
+ 
+@@ -74,13 +74,49 @@ the ticket cache regardless of whether it is in danger of expiring.
+ 
+ =over 4
+ 
++=item B<-a>
++
++When run with either the B<-K> flag or a command, always renew tickets
++each time B<k5start> wakes up.  Without this option, B<k5start> will only
++try to renew a ticket as often as necessary to prevent the ticket from
++expiring.  With this option, B<k5start> will renew tickets according to
++the interval specified with the B<-K> flag.
++
++This behavior probably should have been the default behavior of B<-K>.
++The default was not changed to avoid changes for existing users, but for
++new applications, consider always using B<-a> with B<-K>.
++
++This option can be useful to ensure that a ticket will always have a valid
++lifetime over a certain value.  Without this option, the tickets in the
++ticket cache may have a remaining lifetime as short as about 2 minutes
++before B<k5start> renews them.  If a Kerberos-using program uses the
++ticket lifetime to calculate the lifetime of a per-session context or
++connection, this means that, without this option, that context may only be
++valid for as little as 2 minutes.  With this option, the remaining
++lifetime of the ticket at any given point will be at least as large as the
++argument to B<-K>.
++
++This option can also be useful if another program is manipulating the
++ticket cache that B<k5start> is using.  For example, if another program is
++automatically renewing a ticket more frequently than B<k5start>, then
++B<k5start> will never see a ticket that is close to expiring and will
++therefore, by default, never try to renew the ticket.  This means that
++B<k5start> will also never renew AFS tokens, even if the B<-t> option was
++given, since B<k5start> only renews AFS tokens after it successfully
++renews a ticket.  If this option is specified in such a situation,
++B<k5start> will renew its ticket every time it checks the ticket, so AFS
++tokens will be renewed.
++
++This argument is only valid in combination with either B<-K> or a command
++to run.
++
+ =item B<-b>
+ 
+ After starting, detach from the controlling terminal and run in the
+ background.  This option only makes sense in combination with B<-K> or a
+ command that B<k5start> will be running and can only be used if a keytab
+ is specified with F<-f>.  B<k5start> will not background itself until
+-after it does the initial authentication, so that any initial errors will
++after it has tried authenticating once, so that any initial errors will
+ be reported, but it will then redirect output to F</dev/null> and no
+ subsequent errors will be reported.
+ 
+@@ -139,11 +175,15 @@ Check for a happy ticket, defined as one that has a remaining lifetime of
+ at least I<minutes> minutes.  If such a ticket is found, do not attempt
+ authentication.  Instead, just run the command (if one was specified) or
+ exit immediately with status 0 (if none was).  Otherwise, try to obtain a
+-new ticket and then run the command, if any.  Cannot be used with B<-K>.
++new ticket and then run the command, if any.
+ 
+ If B<-H> is used with B<-t>, the external program will always be run even
+ if a ticket with a sufficient remaining lifetime was found.
+ 
++If B<-H> is used with B<-K>, B<k5start> will not exit immediately.
++Instead, the specified remaining lifetime will replace the default value
++of two minutes.
++
+ =item B<-h>
+ 
+ Display a usage message and exit.
+@@ -168,13 +208,18 @@ option.
+ Run in daemon mode to keep a ticket alive indefinitely.  The program
+ reawakens after I<minutes> minutes, checks if the ticket will expire
+ before or less than two minutes after the next scheduled check, and gets a
+-new ticket if needed.  If this option is not given but a command was given
+-on the command line, an interval appropriate for the ticket lifetime will
+-be used.
++new ticket if needed.  (In other words, it ensures that the ticket will
++always have a remaining lifetime of at least two minutes.)  If the B<-H>
++flag is also given, the lifetime specified by it replaces the two minute
++default.
++
++If this option is not given but a command was given on the command line,
++the default interval is 60 minutes (1 hour).
+ 
+-If an error occurs in refreshing the ticket cache, the wake-up interval
+-will be shortened to one minute and the operation retried at that interval
+-for as long as the error persists.
++If an error occurs in the initial authentication or in refreshing the
++ticket cache, the wake-up interval will be shortened to one minute and
++the operation retried at that interval for as long as the error
++persists.
+ 
+ =item B<-k> I<ticket cache>
+ 
+@@ -408,7 +453,7 @@ will have the current version of B<k5start> and B<krenew>.
+ 
+ B<k5start> was based on the k4start code written by Robert Morgan.  It was
+ ported to Kerberos v5 by Booker C. Bense.  Additional cleanup and current
+-maintenance are done by Russ Allbery <rra@stanford.edu>.
++maintenance are done by Russ Allbery <eagle@eyrie.org>.
+ 
+ Implementations of B<-b> and B<-p> and the example for a Debian init
+ script are based on code contributed by Navid Golpayegani.
+diff --git a/kafs/kafs.c b/kafs/kafs.c
+index 732a20e..46e8f93 100644
+--- a/kafs/kafs.c
++++ b/kafs/kafs.c
+@@ -16,7 +16,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  * Copyright 2006, 2007, 2009
+  *     The Board of Trustees of the Leland Stanford Junior University
+  *
+diff --git a/kafs/sys-darwin10.c b/kafs/sys-darwin10.c
+index 092b171..a8c6468 100644
+--- a/kafs/sys-darwin10.c
++++ b/kafs/sys-darwin10.c
+@@ -12,7 +12,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  * Copyright 2006, 2007, 2009, 2010, 2011
+  *     The Board of Trustees of the Leland Stanford Junior University
+  *
+diff --git a/kafs/sys-darwin8.c b/kafs/sys-darwin8.c
+index 0f89301..05f41f1 100644
+--- a/kafs/sys-darwin8.c
++++ b/kafs/sys-darwin8.c
+@@ -14,7 +14,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  * Copyright 2006, 2007, 2009, 2010
+  *     The Board of Trustees of the Leland Stanford Junior University
+  *
+diff --git a/kafs/sys-linux.c b/kafs/sys-linux.c
+index e0a9138..8c43a8b 100644
+--- a/kafs/sys-linux.c
++++ b/kafs/sys-linux.c
+@@ -13,7 +13,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  * Copyright 2006, 2007, 2009
+  *     The Board of Trustees of the Leland Stanford Junior University
+  *
+diff --git a/kafs/sys-solaris.c b/kafs/sys-solaris.c
+index 27dbc46..2506655 100644
+--- a/kafs/sys-solaris.c
++++ b/kafs/sys-solaris.c
+@@ -13,7 +13,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  * Copyright 2006, 2007, 2009, 2010
+  *     The Board of Trustees of the Leland Stanford Junior University
+  *
+diff --git a/kafs/sys-syscall.c b/kafs/sys-syscall.c
+index 98cc311..d56d939 100644
+--- a/kafs/sys-syscall.c
++++ b/kafs/sys-syscall.c
+@@ -13,7 +13,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  *
+  * The authors hereby relinquish any claim to any copyright that they may have
+  * in this work, whether granted under contract or by operation of law or
+diff --git a/krenew.c b/krenew.c
+index 9408eb3..9ae4c5b 100644
+--- a/krenew.c
++++ b/krenew.c
+@@ -7,8 +7,8 @@
+  * to renew the tickets until it exits or until the ticket cannot be renewed
+  * any longer.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
+- * Copyright 2006, 2007, 2008, 2009, 2010, 2011, 2012
++ * Written by Russ Allbery <eagle@eyrie.org>
++ * Copyright 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2014
+  *     The Board of Trustees of the Leland Stanford Junior University
+  *
+  * See LICENSE for licensing terms.
+@@ -38,6 +38,7 @@ struct krenew_private {
+ /* The usage message. */
+ const char usage_message[] = "\
+ Usage: krenew [options] [command]\n\
++   -a                   Renew on each wakeup when running as a daemon\n\
+    -b                   Fork and run in the background\n\
+    -c <file>            Write child process ID (PID) to <file>\n\
+    -H <limit>           Check for a happy ticket, one that doesn't expire in\n\
+@@ -46,7 +47,7 @@ Usage: krenew [options] [command]\n\
+    -h                   Display this usage message and exit\n\
+    -i                   Keep running even if the ticket cache goes away or\n\
+                         the ticket can no longer be renewed\n\
+-   -K <interval>        Run as daemon, renew ticket every <interval> minutes\n\
++   -K <interval>        Run as daemon, check ticket every <interval> minutes\n\
+    -k <cache>           Use <cache> as the ticket cache\n\
+    -L                   Log messages via syslog as well as stderr\n\
+    -p <file>            Write process ID (PID) to <file>\n\
+@@ -255,6 +256,7 @@ main(int argc, char *argv[])
+     struct config config;
+     struct krenew_private private;
+     krb5_ccache ccache;
++    bool run_as_daemon;
+ 
+     /* Initialize logging. */
+     message_program_name = "krenew";
+@@ -265,8 +267,9 @@ main(int argc, char *argv[])
+     config.private.krenew = &private;
+     config.auth = renew;
+     config.cleanup = cleanup;
+-    while ((option = getopt(argc, argv, "bc:H:hiK:k:Lp:qstvx")) != EOF)
++    while ((option = getopt(argc, argv, "abc:H:hiK:k:Lp:qstvx")) != EOF)
+         switch (option) {
++        case 'a': config.always_renew = true;   break;
+         case 'b': config.background = true;     break;
+         case 'c': config.childfile = optarg;    break;
+         case 'h': usage(0);                     break;
+@@ -310,10 +313,11 @@ main(int argc, char *argv[])
+         config.command = argv;
+ 
+     /* Check the arguments for consistency. */
+-    if (config.background && config.keep_ticket == 0 && config.command == NULL)
++    run_as_daemon = (config.keep_ticket != 0 || config.command != NULL);
++    if (config.always_renew && run_as_daemon)
++        die("-a only makes sense with -K or a command to run");
++    if (config.background && run_as_daemon)
+         die("-b only makes sense with -K or a command to run");
+-    if (config.happy_ticket > 0 && config.keep_ticket > 0)
+-        die("-H and -K options cannot be used at the same time");
+     if (config.happy_ticket > 0 && config.command != NULL)
+         die("-H option cannot be used with a command");
+     if (config.childfile != NULL && config.command == NULL)
+diff --git a/krenew.pod b/krenew.pod
+index 652a179..59cf0b8 100644
+--- a/krenew.pod
++++ b/krenew.pod
+@@ -8,7 +8,7 @@ krenew - Renew a Kerberos ticket
+ 
+ =head1 SYNOPSIS
+ 
+-B<krenew> [B<-bhiLstvx>] [B<-c> I<child pid file>] [B<-H> I<minutes>]
++B<krenew> [B<-abhiLstvx>] [B<-c> I<child pid file>] [B<-H> I<minutes>]
+     [B<-K> I<minutes>] [B<-k> I<ticket cache>] [B<-p> I<pid file>]
+     [I<command> ...]
+ 
+@@ -58,6 +58,42 @@ the ticket cache regardless of whether it is in danger of expiring.
+ 
+ =over 4
+ 
++=item B<-a>
++
++When run with either the B<-K> flag or a command, always renew tickets
++each time B<krenew> wakes up.  Without this option, B<krenew> will only
++try to renew a ticket as often as necessary to prevent the ticket from
++expiring.  With this option, B<krenew> will renew tickets according to
++the interval specified with the B<-K> flag.
++
++This behavior probably should have been the default behavior of B<-K>.
++The default was not changed to avoid changes for existing users, but for
++new applications, consider always using B<-a> with B<-K>.
++
++This option can be useful to ensure that a ticket will always have a valid
++lifetime over a certain value.  Without this option, the tickets in the
++ticket cache may have a remaining lifetime as short as about two minutes
++before B<krenew> renews them.  If a Kerberos-using program uses the ticket
++lifetime to calculate the lifetime of a per-session context or connection,
++this means that, without this option, that context may only be valid for
++as little as two minutes.  With this option, the remaining lifetime of the
++ticket at any given point will be at least as large as the argument to
++B<-K>.
++
++This option can also be useful if another program is manipulating the
++ticket cache that B<krenew> is using.  For example, if another program is
++automatically renewing a ticket more frequently than B<krenew>, then
++B<krenew> will never see a ticket that is close to expiring and will
++therefore, by default, never try to renew the ticket.  This means that
++B<krenew> will also never renew AFS tokens, even if the B<-t> option was
++given, since B<krenew> only renews AFS tokens after it successfully renews
++a ticket.  If this option is specified in such a situation, B<krenew> will
++renew its ticket every time it checks the ticket, so AFS tokens will be
++renewed.
++
++This argument is only valid in combination with either B<-K> or a command
++to run.
++
+ =item B<-b>
+ 
+ After starting, detach from the controlling terminal and run in the
+@@ -111,7 +147,11 @@ remaining lifetime or renewal was successful, run the command (if one was
+ specified) or exit immediately with status 0 (if none was).  Otherwise,
+ try to renew the ticket so that it will have a remaining lifetime of at
+ least I<minutes>, exit with an error if unsuccessful, and then run the
+-command, if any.  Cannot be used with B<-K>.
++command, if any.
++
++If B<-H> is used with B<-K>, B<krenew> will not exit immediately.
++Instead, the specified remaining lifetime will replace the default value
++of two minutes.
+ 
+ =item B<-h>
+ 
+@@ -140,9 +180,13 @@ This flag is only useful in daemon mode or when a command was given.
+ Run in daemon mode to keep a ticket alive indefinitely.  The program
+ reawakens after I<minutes> minutes, checks if the ticket will expire
+ before or less than two minutes before the next scheduled check, and
+-renews the ticket if needed.  If this option is not given but a command
+-was given on the command line, the default interval is 60 minutes (1
+-hour).
++renews the ticket if needed.  (In other words, it ensures that the ticket
++will always have a remaining lifetime of at least two minutes.)  If the
++B<-H> flag is also given, the lifetime specified by it replaces the two
++minute default.
++
++If this option is not given but a command was given on the command line,
++the default interval is 60 minutes (1 hour).
+ 
+ If an error occurs in refreshing the ticket cache that doesn't cause
+ B<krenew> to exit, the wake-up interval will be shortened to one minute
+@@ -288,7 +332,7 @@ will have the current version of B<krenew>.
+ 
+ =head1 AUTHORS
+ 
+-B<krenew> was written by Russ Allbery <rra@stanford.edu>.  It was based
++B<krenew> was written by Russ Allbery <eagle@eyrie.org>.  It was based
+ heavily on B<k5start> by Booker C. Bense, which in turn was based on the
+ k4start code written by Robert Morgan.
+ 
+diff --git a/kstart.spec b/kstart.spec
+index f25de00..e21f0f9 100644
+--- a/kstart.spec
++++ b/kstart.spec
+@@ -1,6 +1,6 @@
+ Name: kstart
+ Summary: Kerberos kinit variants supporting ticket refreshing
+-Version: 3.16
++Version: 4.1
+ Release: 1%{?dist}
+ License: MIT
+ Group: System Environment/Base
+@@ -8,7 +8,7 @@ URL: http://www.eyrie.org/~eagle/software/kstart/
+ Source: http://archives.eyrie.org/software/kerberos/%{name}-%{version}.tar.gz
+ BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
+ BuildRequires: krb5-devel
+-Requires: krb5-libs
++Requires: krb5
+ Vendor: Stanford University
+ 
+ %description
+@@ -30,77 +30,81 @@ PATH="/sbin:/bin:/usr/sbin:/usr/bin:$PATH" \
+ %{__make}
+ 
+ %install
+-%{__rm} -rf %{buildroot}
+ %makeinstall
+ 
+ %clean
+ %{__rm} -rf %{buildroot}
+ 
+ %files
+-%defattr(-, root, root, 0755)
++%defattr(-, root, root)
+ %{_bindir}/*
+-%defattr(-, root, root, 0644)
+ %doc LICENSE NEWS README TODO
+ %{_mandir}/*/*
+ 
+ %changelog
+-* Tue Dec 27 2011 Russ Allbery <rra@stanford.edu> 3.16-2
++* Mon Jan 9 2012 Robbert Eggermont <R.Eggermont@tudelft.nl> 4.1-1
++- New version for 4.1 release.
++- Require krb5 instead of krb5-libs for SLED compatibility.
++- Fix %defattr lines to not cause directory permission issues.
++- Tested on RHEL5/6 and SLED10/11.
++
++* Tue Dec 27 2011 Russ Allbery <eagle@eyrie.org> 3.16-2
+ - Remove references to k4start from description.
+ 
+ * Mon Mar 29 2010 Andy Cobaugh <phalenor@bx.psu.edu> 3.16-1
+ - New version for 3.16 release.
+ - Require krb5-libs instead of krb5-workstation.
+ 
+-* Sat Aug 15 2008 Russ Allbery <rra@stanford.edu> 3.15-1
++* Sat Aug 15 2008 Russ Allbery <eagle@eyrie.org> 3.15-1
+ - New version for 3.15 release.
+ 
+-* Tue Jul 22 2008 Russ Allbery <rra@stanford.edu> 3.14-1
++* Tue Jul 22 2008 Russ Allbery <eagle@eyrie.org> 3.14-1
+ - New version for 3.14 release.
+ - Fix default file attributes for non-executables.
+ - Remove the BSD license; everything is under an MIT license.
+ 
+-* Wed May 28 2008 Russ Allbery <rra@stanford.edu> 3.13-1
++* Wed May 28 2008 Russ Allbery <eagle@eyrie.org> 3.13-1
+ - New version for 3.13 release.
+ 
+-* Wed Apr 23 2008 Russ Allbery <rra@stanford.edu> 3.12-1
++* Wed Apr 23 2008 Russ Allbery <eagle@eyrie.org> 3.12-1
+ - New version for 3.12 release.
+ 
+-* Tue Apr 10 2008 Russ Allbery <rra@stanford.edu> 3.11-1
++* Tue Apr 10 2008 Russ Allbery <eagle@eyrie.org> 3.11-1
+ - New version for 3.11 release.
+ - Add LICENSE and TODO to documentation.
+ - Build with --enable-setpag now that it no longer requires extra libraries.
+ 
+-* Sat Mar 3 2007 Russ Allbery <rra@stanford.edu> 3.9-1
++* Sat Mar 3 2007 Russ Allbery <eagle@eyrie.org> 3.9-1
+ - New version for 3.9 release.
+ 
+-* Sat Mar 3 2007 Russ Allbery <rra@stanford.edu> 3.8-1
++* Sat Mar 3 2007 Russ Allbery <eagle@eyrie.org> 3.8-1
+ - New version for 3.8 release.
+ 
+-* Sun Jan 28 2007 Russ Allbery <rra@stanford.edu> 3.7-1
++* Sun Jan 28 2007 Russ Allbery <eagle@eyrie.org> 3.7-1
+ - New version for 3.7 release.
+ 
+-* Wed Oct 04 2006 Russ Allbery <rra@stanford.edu> 3.6-1
++* Wed Oct 04 2006 Russ Allbery <eagle@eyrie.org> 3.6-1
+ - New version for 3.6 release.
+ 
+-* Tue Jun 13 2006 Russ Allbery <rra@stanford.edu> 3.5-1
++* Tue Jun 13 2006 Russ Allbery <eagle@eyrie.org> 3.5-1
+ - New version for 3.5 release.
+ 
+-* Mon Apr 10 2006 Russ Allbery <rra@stanford.edu> 3.3-1
++* Mon Apr 10 2006 Russ Allbery <eagle@eyrie.org> 3.3-1
+ - New version for 3.3 release.
+ 
+-* Sun Mar 05 2006 Russ Allbery <rra@stanford.edu> 3.2-1
++* Sun Mar 05 2006 Russ Allbery <eagle@eyrie.org> 3.2-1
+ - New version for 3.2 release.
+ 
+-* Sun Jan 22 2006 Russ Allbery <rra@stanford.edu> 3.0-1
++* Sun Jan 22 2006 Russ Allbery <eagle@eyrie.org> 3.0-1
+ - New version for 3.0 release.
+ - Update description to include krenew.
+ - No longer build with --enable-reduced-depends.
+ 
+-* Sat Dec 31 2005 Russ Allbery <rra@stanford.edu> 2.9-1
++* Sat Dec 31 2005 Russ Allbery <eagle@eyrie.org> 2.9-1
+ - New version for 2.9 release.
+ - No longer generated via Autoconf, since the changelog has to be added.
+ 
+-* Sat Dec 10 2005 Russ Allbery <rra@stanford.edu> 2.8-2
++* Sat Dec 10 2005 Russ Allbery <eagle@eyrie.org> 2.8-2
+ - Incorporate into the package, remove Autoreq.
+ 
+ * Thu Oct 27 2005 Buck <buckh@> 2.8-1
+diff --git a/m4/kafs.m4 b/m4/kafs.m4
+index beb998d..e6578ab 100644
+--- a/m4/kafs.m4
++++ b/m4/kafs.m4
+@@ -34,7 +34,7 @@ dnl
+ dnl The canonical version of this file is maintained in the rra-c-util
+ dnl package, available at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+ dnl
+-dnl Written by Russ Allbery <rra@stanford.edu>
++dnl Written by Russ Allbery <eagle@eyrie.org>
+ dnl Copyright 2008, 2009, 2010
+ dnl     The Board of Trustees of the Leland Stanford Junior University
+ dnl
+diff --git a/m4/krb5.m4 b/m4/krb5.m4
+index 57fa838..d4db933 100644
+--- a/m4/krb5.m4
++++ b/m4/krb5.m4
+@@ -39,7 +39,7 @@ dnl
+ dnl The canonical version of this file is maintained in the rra-c-util
+ dnl package, available at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+ dnl
+-dnl Written by Russ Allbery <rra@stanford.edu>
++dnl Written by Russ Allbery <eagle@eyrie.org>
+ dnl Copyright 2005, 2006, 2007, 2008, 2009, 2010, 2011
+ dnl     The Board of Trustees of the Leland Stanford Junior University
+ dnl
+diff --git a/m4/lib-depends.m4 b/m4/lib-depends.m4
+index b5185f3..22d38ee 100644
+--- a/m4/lib-depends.m4
++++ b/m4/lib-depends.m4
+@@ -12,7 +12,7 @@ dnl
+ dnl The canonical version of this file is maintained in the rra-c-util
+ dnl package, available at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+ dnl
+-dnl Written by Russ Allbery <rra@stanford.edu>
++dnl Written by Russ Allbery <eagle@eyrie.org>
+ dnl Copyright 2005, 2006, 2007
+ dnl     The Board of Trustees of the Leland Stanford Junior University
+ dnl
+diff --git a/m4/lib-pathname.m4 b/m4/lib-pathname.m4
+index fd5a5a1..828270f 100644
+--- a/m4/lib-pathname.m4
++++ b/m4/lib-pathname.m4
+@@ -15,7 +15,7 @@ dnl
+ dnl The canonical version of this file is maintained in the rra-c-util
+ dnl package, available at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+ dnl
+-dnl Written by Russ Allbery <rra@stanford.edu>
++dnl Written by Russ Allbery <eagle@eyrie.org>
+ dnl Copyright 2008, 2009
+ dnl     The Board of Trustees of the Leland Stanford Junior University
+ dnl
+diff --git a/m4/snprintf.m4 b/m4/snprintf.m4
+index cd585ef..f134ab9 100644
+--- a/m4/snprintf.m4
++++ b/m4/snprintf.m4
+@@ -12,7 +12,7 @@ dnl
+ dnl The canonical version of this file is maintained in the rra-c-util
+ dnl package, available at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+ dnl
+-dnl Written by Russ Allbery <rra@stanford.edu>
++dnl Written by Russ Allbery <eagle@eyrie.org>
+ dnl Copyright 2006, 2008, 2009
+ dnl     The Board of Trustees of the Leland Stanford Junior University
+ dnl
+diff --git a/m4/vamacros.m4 b/m4/vamacros.m4
+index af98f6a..62fb82d 100644
+--- a/m4/vamacros.m4
++++ b/m4/vamacros.m4
+@@ -16,7 +16,7 @@ dnl
+ dnl The canonical version of this file is maintained in the rra-c-util
+ dnl package, available at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+ dnl
+-dnl Written by Russ Allbery <rra@stanford.edu>
++dnl Written by Russ Allbery <eagle@eyrie.org>
+ dnl Copyright 2006, 2008, 2009
+ dnl     The Board of Trustees of the Leland Stanford Junior University
+ dnl
+diff --git a/portable/asprintf.c b/portable/asprintf.c
+index 0093070..7bdfd0d 100644
+--- a/portable/asprintf.c
++++ b/portable/asprintf.c
+@@ -7,7 +7,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  *
+  * The authors hereby relinquish any claim to any copyright that they may have
+  * in this work, whether granted under contract or by operation of law or
+diff --git a/portable/daemon.c b/portable/daemon.c
+index 1a3e25f..c66413f 100644
+--- a/portable/daemon.c
++++ b/portable/daemon.c
+@@ -7,7 +7,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  *
+  * The authors hereby relinquish any claim to any copyright that they may have
+  * in this work, whether granted under contract or by operation of law or
+diff --git a/portable/dummy.c b/portable/dummy.c
+index 50052ec..f2ac917 100644
+--- a/portable/dummy.c
++++ b/portable/dummy.c
+@@ -8,7 +8,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  *
+  * The authors hereby relinquish any claim to any copyright that they may have
+  * in this work, whether granted under contract or by operation of law or
+diff --git a/portable/k_haspag.c b/portable/k_haspag.c
+index 849b41c..78a188d 100644
+--- a/portable/k_haspag.c
++++ b/portable/k_haspag.c
+@@ -11,7 +11,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  *
+  * The authors hereby relinquish any claim to any copyright that they may have
+  * in this work, whether granted under contract or by operation of law or
+diff --git a/portable/kafs.h b/portable/kafs.h
+index 139b224..df18a80 100644
+--- a/portable/kafs.h
++++ b/portable/kafs.h
+@@ -15,7 +15,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  * Copyright 2006, 2007, 2008, 2010
+  *     The Board of Trustees of the Leland Stanford Junior University
+  *
+diff --git a/portable/krb5-extra.c b/portable/krb5-extra.c
+index 61f5cb2..f4d304b 100644
+--- a/portable/krb5-extra.c
++++ b/portable/krb5-extra.c
+@@ -9,7 +9,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  *
+  * The authors hereby relinquish any claim to any copyright that they may have
+  * in this work, whether granted under contract or by operation of law or
+diff --git a/portable/krb5-renew.c b/portable/krb5-renew.c
+index f5163c7..95e17b7 100644
+--- a/portable/krb5-renew.c
++++ b/portable/krb5-renew.c
+@@ -9,7 +9,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  * Copyright 2006, 2007, 2008, 2009, 2010
+  *     The Board of Trustees of the Leland Stanford Junior University
+  *
+diff --git a/portable/krb5.h b/portable/krb5.h
+index 4e5746e..a556bbc 100644
+--- a/portable/krb5.h
++++ b/portable/krb5.h
+@@ -19,7 +19,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  *
+  * The authors hereby relinquish any claim to any copyright that they may have
+  * in this work, whether granted under contract or by operation of law or
+diff --git a/portable/macros.h b/portable/macros.h
+index eed772a..9ca20ac 100644
+--- a/portable/macros.h
++++ b/portable/macros.h
+@@ -4,7 +4,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  *
+  * The authors hereby relinquish any claim to any copyright that they may have
+  * in this work, whether granted under contract or by operation of law or
+diff --git a/portable/mkstemp.c b/portable/mkstemp.c
+index 8668db1..2cbfe08 100644
+--- a/portable/mkstemp.c
++++ b/portable/mkstemp.c
+@@ -7,7 +7,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  *
+  * The authors hereby relinquish any claim to any copyright that they may have
+  * in this work, whether granted under contract or by operation of law or
+diff --git a/portable/setenv.c b/portable/setenv.c
+index 8a4302c..5462547 100644
+--- a/portable/setenv.c
++++ b/portable/setenv.c
+@@ -7,7 +7,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  *
+  * The authors hereby relinquish any claim to any copyright that they may have
+  * in this work, whether granted under contract or by operation of law or
+diff --git a/portable/snprintf.c b/portable/snprintf.c
+index 91c8491..225455b 100644
+--- a/portable/snprintf.c
++++ b/portable/snprintf.c
+@@ -73,7 +73,7 @@
+  *    fixed handling of %.0f
+  *    added test for HAVE_LONG_DOUBLE
+  *
+- *  Russ Allbery <rra@stanford.edu> 2000-08-26
++ *  Russ Allbery <eagle@eyrie.org> 2000-08-26
+  *    fixed return value to comply with C99
+  *    fixed handling of snprintf(NULL, ...)
+  *
+diff --git a/portable/stdbool.h b/portable/stdbool.h
+index 045436f..14d011b 100644
+--- a/portable/stdbool.h
++++ b/portable/stdbool.h
+@@ -8,7 +8,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  *
+  * The authors hereby relinquish any claim to any copyright that they may have
+  * in this work, whether granted under contract or by operation of law or
+diff --git a/portable/strlcat.c b/portable/strlcat.c
+index 3bee4ee..9c8686d 100644
+--- a/portable/strlcat.c
++++ b/portable/strlcat.c
+@@ -12,7 +12,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  *
+  * The authors hereby relinquish any claim to any copyright that they may have
+  * in this work, whether granted under contract or by operation of law or
+diff --git a/portable/strlcpy.c b/portable/strlcpy.c
+index df75fd8..592e3ee 100644
+--- a/portable/strlcpy.c
++++ b/portable/strlcpy.c
+@@ -11,7 +11,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  *
+  * The authors hereby relinquish any claim to any copyright that they may have
+  * in this work, whether granted under contract or by operation of law or
+diff --git a/portable/strndup.c b/portable/strndup.c
+index 55afb8d..317c6f9 100644
+--- a/portable/strndup.c
++++ b/portable/strndup.c
+@@ -4,7 +4,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  *
+  * The authors hereby relinquish any claim to any copyright that they may have
+  * in this work, whether granted under contract or by operation of law or
+diff --git a/portable/system.h b/portable/system.h
+index f06484a..5bb4ca6 100644
+--- a/portable/system.h
++++ b/portable/system.h
+@@ -22,7 +22,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  *
+  * The authors hereby relinquish any claim to any copyright that they may have
+  * in this work, whether granted under contract or by operation of law or
+diff --git a/tests/README b/tests/README
+index 5d38748..b94985d 100644
+--- a/tests/README
++++ b/tests/README
+@@ -240,7 +240,7 @@ License
+     This file is part of the documentation of C TAP Harness, which can be
+     found at <http://www.eyrie.org/~eagle/software/c-tap-harness/>.
+ 
+-    Copyright 2010 Russ Allbery <rra@stanford.edu>
++    Copyright 2010 Russ Allbery <eagle@eyrie.org>
+ 
+     Copying and distribution of this file, with or without modification,
+     are permitted in any medium without royalty provided the copyright
+diff --git a/tests/docs/pod-spelling-t b/tests/docs/pod-spelling-t
+index a9f27ed..e3f5f34 100755
+--- a/tests/docs/pod-spelling-t
++++ b/tests/docs/pod-spelling-t
+@@ -7,7 +7,7 @@
+ # RRA_MAINTAINER_TESTS is set, since spelling dictionaries vary too much
+ # between environments.
+ #
+-# Copyright 2008, 2009, 2011 Russ Allbery <rra@stanford.edu>
++# Copyright 2008, 2009, 2011 Russ Allbery <eagle@eyrie.org>
+ #
+ # See LICENSE for licensing terms.
+ 
+diff --git a/tests/docs/pod-t b/tests/docs/pod-t
+index d1959c8..396089e 100755
+--- a/tests/docs/pod-t
++++ b/tests/docs/pod-t
+@@ -2,7 +2,7 @@
+ #
+ # Test formatting of POD documentation.
+ #
+-# Written by Russ Allbery <rra@stanford.edu>
++# Written by Russ Allbery <eagle@eyrie.org>
+ # Copyright 2008, 2009, 2011
+ #     The Board of Trustees of the Leland Stanford Junior University
+ #
+diff --git a/tests/k5start/afs-t b/tests/k5start/afs-t
+index 5799941..58ce880 100755
+--- a/tests/k5start/afs-t
++++ b/tests/k5start/afs-t
+@@ -2,7 +2,7 @@
+ #
+ # Tests for k5start with AFS.
+ #
+-# Written by Russ Allbery <rra@stanford.edu>
++# Written by Russ Allbery <eagle@eyrie.org>
+ # Copyright 2008, 2009
+ #     The Board of Trustees of the Leland Stanford Junior University
+ #
+diff --git a/tests/k5start/basic-t b/tests/k5start/basic-t
+index ca9e14d..cc84397 100755
+--- a/tests/k5start/basic-t
++++ b/tests/k5start/basic-t
+@@ -2,7 +2,7 @@
+ #
+ # Tests for basic k5start functionality.
+ #
+-# Written by Russ Allbery <rra@stanford.edu>
++# Written by Russ Allbery <eagle@eyrie.org>
+ # Copyright 2008, 2009
+ #     The Board of Trustees of the Leland Stanford Junior University
+ #
+diff --git a/tests/k5start/daemon-t b/tests/k5start/daemon-t
+index 321311d..05a3061 100755
+--- a/tests/k5start/daemon-t
++++ b/tests/k5start/daemon-t
+@@ -2,8 +2,8 @@
+ #
+ # Tests for k5start daemon functionality.
+ #
+-# Written by Russ Allbery <rra@stanford.edu>
+-# Copyright 2008, 2009, 2011, 2012
++# Written by Russ Allbery <eagle@eyrie.org>
++# Copyright 2008, 2009, 2011, 2012, 2014
+ #     The Board of Trustees of the Leland Stanford Junior University
+ #
+ # See LICENSE for licensing terms.
+@@ -30,7 +30,7 @@ require "$ENV{SOURCE}/libtest.pl";
+ 
+ # Decide whether we have the configuration to run the tests.
+ if (-f "$DATA/test.keytab" and -f "$DATA/test.principal") {
+-    plan tests => 76;
++    plan tests => 84;
+ } else {
+     plan skip_all => "no keytab configuration";
+     exit 0;
+@@ -52,7 +52,7 @@ if (!defined $pid) {
+           $principal) or BAIL_OUT ("can't run $K5START: $!");
+ }
+ my $tries = 0;
+-while (not -f "$TMP/krb5cc_test" and $tries < 10) {
++while (not -f "$TMP/pid" and $tries < 100) {
+     select (undef, undef, undef, 0.1);
+     $tries++;
+ }
+@@ -72,7 +72,7 @@ unlink "$TMP/krb5cc_test";
+ ok (! -f "$TMP/krb5cc_test", 'Ticket cache was deleted');
+ kill (14, $pid) or warn "Can't kill $pid: $!\n";
+ $tries = 0;
+-while (not -f "$TMP/krb5cc_test" and $tries < 10) {
++while (not -f "$TMP/krb5cc_test" and $tries < 100) {
+     select (undef, undef, undef, 0.1);
+     $tries++;
+ }
+@@ -84,6 +84,7 @@ like ($service, qr%^krbtgt/%, ' and the right service');
+ kill (15, $pid) or warn "Can't kill $pid: $!\n";
+ is (waitpid ($pid, 0), $pid, ' and k5start dies after SIGTERM');
+ ok (!-f "$TMP/pid", ' and the PID file was removed');
++unlink "$TMP/pid";
+ 
+ # Try again with the -b flag.
+ unlink "$TMP/krb5cc_test";
+@@ -94,7 +95,7 @@ is ($status, 0, 'Backgrounding k5start works');
+ is ($err, '', ' with no error output');
+ is ($out, '', ' and -q was added implicitly');
+ $tries = 0;
+-while (not -f "$TMP/krb5cc_test" and $tries < 10) {
++while (not -f "$TMP/pid" and $tries < 100) {
+     select (undef, undef, undef, 0.1);
+     $tries++;
+ }
+@@ -107,6 +108,37 @@ ok (kill (0, $pid), ' and the PID file is correct');
+ kill (15, $pid) or warn "Can't kill $pid: $!\n";
+ select (undef, undef, undef, 0.2);
+ ok (!-f "$TMP/pid", ' and the PID file was removed');
++unlink "$TMP/pid";
++
++# Try again with an initial authentication failure and ensure that k5start
++# keeps running anyway.
++unlink "$TMP/krb5cc_test";
++($out, $err, $status)
++    = command ($K5START, '-bK', 1, '-f', "$DATA/test.keytab-BAD", '-p',
++               "$TMP/pid", $principal);
++is ($status, 0, 'Backgrounding k5start with bad keytab works');
++like ($err, qr/^k5start: error getting credentials: /, ' with error output');
++is ($out, '', ' and -q was added implicitly');
++$pid = contents ("$TMP/pid");
++ok (kill (0, $pid), ' and the PID file is correct');
++kill (15, $pid) or warn "Can't kill $pid: $!\n";
++select (undef, undef, undef, 0.2);
++ok (!-f "$TMP/pid", ' and the PID file was removed');
++unlink "$TMP/pid";
++
++# Providing -x should override that behavior and cause the daemon to refuse
++# to start.
++unlink "$TMP/krb5cc_test";
++($out, $err, $status)
++    = command ($K5START, '-bxK', 1, '-f', "$DATA/test.keytab-BAD", '-p',
++               "$TMP/pid", $principal);
++is ($status, 1, 'Backgrounding k5start -x with bad keytab fails');
++like ($err, qr/^k5start: error getting credentials: /, ' with error output');
++is ($out, '', ' and -q was added implicitly');
++if ($status == 0) {
++    $pid = contents ("$TMP/pid");
++    kill (15, $pid) or warn "Can't kill $pid: $!\n";
++}
+ 
+ # Check that k5start keeps running if the ticket cache directory is not
+ # writeable.
+@@ -120,7 +152,7 @@ if (!defined $pid) {
+         or BAIL_OUT ("can't run $K5START: $!");
+ }
+ $tries = 0;
+-while (not -f "$TMP/pid" and $tries < 10) {
++while (not -f "$TMP/pid" and $tries < 100) {
+     select (undef, undef, undef, 0.1);
+     $tries++;
+ }
+@@ -128,7 +160,11 @@ $pid = contents ("$TMP/pid");
+ ok (kill (0, $pid), 'k5start -K 1 started');
+ chmod 0555, $TMP or BAIL_OUT ("cannot chmod $TMP: $!");
+ kill (14, $pid) or warn "Can't kill $pid: $!\n";
+-select (undef, undef, undef, 0.5);
++$tries = 0;
++while (not -s "$TMP/k5start-errors" and $tries < 100) {
++    select (undef, undef, undef, 0.1);
++    $tries++;
++}
+ ok (kill (0, $pid), ' and it keeps running on a non-writeable cache');
+ chmod 0755, $TMP or BAIL_OUT ("cannot chmod $TMP: $!");
+ if (open (ERRORS, '<', "$TMP/k5start-errors")) {
+@@ -153,7 +189,11 @@ $pid = contents ("$TMP/pid");
+ ok (kill (0, $pid), 'k5start -xb started');
+ chmod 0555, $TMP or BAIL_OUT ("cannot chmod $TMP: $!");
+ kill (14, $pid) or warn "Can't kill $pid: $!\n";
+-select (undef, undef, undef, 0.5);
++$tries = 0;
++while (kill (0, $pid) and $tries < 100) {
++    select (undef, undef, undef, 0.5);
++    $tries++;
++}
+ ok (!kill (0, $pid), ' and it exits on a non-writeable cache');
+ chmod 0755, $TMP or BAIL_OUT ("cannot chmod $TMP: $!");
+ unlink "$TMP/pid";
+@@ -169,7 +209,7 @@ is ($status, 0, 'Backgrounding k5start works');
+ is ($err, '', ' with no error output');
+ is ($out, '', ' and output was redirected properly');
+ $tries = 0;
+-while (not -f "$TMP/child-pid" and $tries < 10) {
++while (not -f "$TMP/child-pid" and $tries < 100) {
+     select (undef, undef, undef, 0.1);
+     $tries++;
+ }
+@@ -185,7 +225,7 @@ ok (kill (0, $pid), 'k5start is running');
+ $child = contents ("$TMP/child-pid");
+ ok (kill (0, $child), 'The child process is running');
+ $tries = 0;
+-while (not -S "$TMP/child-out" and $tries < 10) {
++while (not -s "$TMP/child-out" and $tries < 100) {
+     select (undef, undef, undef, 0.1);
+     $tries++;
+ }
+@@ -221,7 +261,7 @@ is ($status, 0, 'Backgrounding k5start works');
+ is ($err, '', ' with no error output');
+ is ($out, '', ' and output was redirected properly');
+ $tries = 0;
+-while (not -f "$TMP/child-pid" and $tries < 10) {
++while (not -f "$TMP/child-pid" and $tries < 100) {
+     select (undef, undef, undef, 0.1);
+     $tries++;
+ }
+@@ -230,7 +270,7 @@ ok (kill (0, $pid), 'k5start is running');
+ $child = contents ("$TMP/child-pid");
+ ok (kill (0, $child), 'The child process is running');
+ $tries = 0;
+-while (not -S "$TMP/child-out" and $tries < 10) {
++while (not -s "$TMP/child-out" and $tries < 100) {
+     select (undef, undef, undef, 0.1);
+     $tries++;
+ }
+@@ -265,7 +305,7 @@ is ($status, 0, 'Backgrounding k5start works');
+ is ($err, '', ' with no error output');
+ is ($out, '', ' and output was redirected properly');
+ $tries = 0;
+-while (not -f "$TMP/child-pid" and $tries < 10) {
++while (not -f "$TMP/child-pid" and $tries < 100) {
+     select (undef, undef, undef, 0.1);
+     $tries++;
+ }
+@@ -274,7 +314,7 @@ ok (kill (0, $pid), 'k5start is running');
+ $child = contents ("$TMP/child-pid");
+ ok (kill (0, $child), 'The child process is running');
+ $tries = 0;
+-while (not -S "$TMP/child-out" and $tries < 10) {
++while (not -s "$TMP/child-out" and $tries < 100) {
+     select (undef, undef, undef, 0.1);
+     $tries++;
+ }
+diff --git a/tests/k5start/errors-t b/tests/k5start/errors-t
+index 704f7cf..9ceaa2e 100755
+--- a/tests/k5start/errors-t
++++ b/tests/k5start/errors-t
+@@ -2,7 +2,7 @@
+ #
+ # Tests for error handling in k5start.
+ #
+-# Written by Russ Allbery <rra@stanford.edu>
++# Written by Russ Allbery <eagle@eyrie.org>
+ # Copyright 2011
+ #     The Board of Trustees of the Leland Stanford Junior University
+ #
+diff --git a/tests/k5start/flags-t b/tests/k5start/flags-t
+index b1c1b92..8d3c343 100755
+--- a/tests/k5start/flags-t
++++ b/tests/k5start/flags-t
+@@ -2,7 +2,7 @@
+ #
+ # Tests for basic k5start functionality.
+ #
+-# Written by Russ Allbery <rra@stanford.edu>
++# Written by Russ Allbery <eagle@eyrie.org>
+ # Copyright 2008, 2009, 2010
+ #     The Board of Trustees of the Leland Stanford Junior University
+ #
+diff --git a/tests/k5start/keyring-t b/tests/k5start/keyring-t
+index 5de7690..34ff9c9 100755
+--- a/tests/k5start/keyring-t
++++ b/tests/k5start/keyring-t
+@@ -2,8 +2,8 @@
+ #
+ # Tests for k5start support of keyrings.
+ #
+-# Written by Russ Allbery <rra@stanford.edu>
+-# Copyright 2011
++# Written by Russ Allbery <eagle@eyrie.org>
++# Copyright 2011, 2014
+ #     The Board of Trustees of the Leland Stanford Junior University
+ #
+ # See LICENSE for licensing terms.
+@@ -27,7 +27,8 @@ if (not -f "$DATA/test.keytab" or not -f "$DATA/test.principal") {
+ } else {
+     $principal = contents ("$DATA/test.principal");
+     $ENV{KRB5CCNAME} = 'KEYRING:test';
+-    unless (kinit ("$DATA/test.keytab", $principal) && !-f 'KEYRING:test') {
++    unless (kinit ("$DATA/test.keytab", $principal) && !-f 'KEYRING:test'
++            && klist ()) {
+         plan skip_all => 'cannot use keyring caches';
+         exit 0;
+     }
+diff --git a/tests/k5start/non-renewable-t b/tests/k5start/non-renewable-t
+index 468acc2..31a4ac8 100755
+--- a/tests/k5start/non-renewable-t
++++ b/tests/k5start/non-renewable-t
+@@ -5,7 +5,7 @@
+ # k5start 4.0 had a bug where if tickets weren't renewable, k5start -H 1 would
+ # attempt to reauthenticate.  Ensure that bug doesn't recur.
+ #
+-# Written by Russ Allbery <rra@stanford.edu>
++# Written by Russ Allbery <eagle@eyrie.org>
+ # Copyright 2012
+ #     The Board of Trustees of the Leland Stanford Junior University
+ #
+diff --git a/tests/k5start/perms-t b/tests/k5start/perms-t
+index 965ed10..6d70546 100755
+--- a/tests/k5start/perms-t
++++ b/tests/k5start/perms-t
+@@ -2,7 +2,7 @@
+ #
+ # Tests for k5start handling of ticket permissions.
+ #
+-# Written by Russ Allbery <rra@stanford.edu>
++# Written by Russ Allbery <eagle@eyrie.org>
+ # Copyright 2011
+ #     The Board of Trustees of the Leland Stanford Junior University
+ #
+diff --git a/tests/k5start/sigchld-t b/tests/k5start/sigchld-t
+index 6626088..028d41b 100755
+--- a/tests/k5start/sigchld-t
++++ b/tests/k5start/sigchld-t
+@@ -2,8 +2,8 @@
+ #
+ # Test for proper SIGCHLD handling in k5start.
+ #
+-# Written by Russ Allbery <rra@stanford.edu>
+-# Copyright 2010
++# Written by Russ Allbery <eagle@eyrie.org>
++# Copyright 2010, 2014
+ #     The Board of Trustees of the Leland Stanford Junior University
+ #
+ # See LICENSE for licensing terms.
+@@ -36,7 +36,6 @@ $ENV{KRB5CCNAME} = 'krb5cc_test';
+ 
+ # We're going to test multiple receipt of SIGCHLD and see if k5start loses
+ # track of the signal handler and then keeps running until its timeout period.
+-my $start = time;
+ my $pid = fork;
+ if (not defined $pid) {
+     BAIL_OUT ("cannot fork: $!\n");
+@@ -44,9 +43,14 @@ if (not defined $pid) {
+     exec ($K5START, '-qUf', "$DATA/test.keytab", '-K60', '-c', 'child-pid',
+           '--', 'sleep', '100');
+ } else {
+-    sleep 1;
+-    kill (SIGCHLD, $pid) or BAIL_OUT ("cannot send SIGCHLD to child $pid\n");
++    my $tries = 0;
++    while (not -f 'child-pid' and $tries < 100) {
++        select (undef, undef, undef, 0.1);
++        $tries++;
++    }
+ }
++kill (SIGCHLD, $pid) or BAIL_OUT ("cannot send SIGCHLD to child $pid\n");
++my $start = time;
+ open (CHILD, '<', 'child-pid') or BAIL_OUT ("cannot open child-pid: $!\n");
+ my $child = <CHILD>;
+ close CHILD;
+diff --git a/tests/kafs/basic-t b/tests/kafs/basic-t
+index e96e3cd..000d738 100755
+--- a/tests/kafs/basic-t
++++ b/tests/kafs/basic-t
+@@ -5,7 +5,7 @@
+ # The canonical version of this file is maintained in the rra-c-util package,
+ # which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+ #
+-# Written by Russ Allbery <rra@stanford.edu>
++# Written by Russ Allbery <eagle@eyrie.org>
+ # Copyright 2009
+ #     The Board of Trustees of the Leland Stanford Junior University
+ #
+diff --git a/tests/kafs/basic.c b/tests/kafs/basic.c
+index a053a0f..bbef148 100644
+--- a/tests/kafs/basic.c
++++ b/tests/kafs/basic.c
+@@ -13,7 +13,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  * Copyright 2009, 2010
+  *     The Board of Trustees of the Leland Stanford Junior University
+  *
+diff --git a/tests/kafs/haspag-t.c b/tests/kafs/haspag-t.c
+index c6e670f..63cbe45 100644
+--- a/tests/kafs/haspag-t.c
++++ b/tests/kafs/haspag-t.c
+@@ -8,7 +8,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  * Copyright 2010, 2011
+  *     The Board of Trustees of the Leland Stanford Junior University
+  *
+diff --git a/tests/krenew/afs-t b/tests/krenew/afs-t
+index 12f053e..ddc1749 100755
+--- a/tests/krenew/afs-t
++++ b/tests/krenew/afs-t
+@@ -2,7 +2,7 @@
+ #
+ # Tests for krenew with AFS.
+ #
+-# Written by Russ Allbery <rra@stanford.edu>
++# Written by Russ Allbery <eagle@eyrie.org>
+ # Copyright 2008, 2009
+ #     The Board of Trustees of the Leland Stanford Junior University
+ #
+diff --git a/tests/krenew/basic-t b/tests/krenew/basic-t
+index d32e94b..341545f 100755
+--- a/tests/krenew/basic-t
++++ b/tests/krenew/basic-t
+@@ -2,7 +2,7 @@
+ #
+ # Tests for basic krenew functionality.
+ #
+-# Written by Russ Allbery <rra@stanford.edu>
++# Written by Russ Allbery <eagle@eyrie.org>
+ # Copyright 2008, 2009, 2011
+ #     The Board of Trustees of the Leland Stanford Junior University
+ #
+diff --git a/tests/krenew/daemon-t b/tests/krenew/daemon-t
+index d937d48..5d6d53c 100755
+--- a/tests/krenew/daemon-t
++++ b/tests/krenew/daemon-t
+@@ -2,8 +2,8 @@
+ #
+ # Tests for krenew daemon functionality.
+ #
+-# Written by Russ Allbery <rra@stanford.edu>
+-# Copyright 2008, 2009, 2011, 2012
++# Written by Russ Allbery <eagle@eyrie.org>
++# Copyright 2008, 2009, 2011, 2012, 2014
+ #     The Board of Trustees of the Leland Stanford Junior University
+ #
+ # See LICENSE for licensing terms.
+@@ -55,7 +55,7 @@ if (!defined $pid) {
+         or BAIL_OUT ("can't run $KRENEW: $!");
+ }
+ my $tries = 0;
+-while (not -f "$TMP/pid" and $tries < 10) {
++while (not -f "$TMP/pid" and $tries < 100) {
+     select (undef, undef, undef, 0.1);
+     $tries++;
+ }
+@@ -87,7 +87,7 @@ is ($status, 0, 'Backgrounding krenew works');
+ is ($err, '', ' with no error output');
+ is ($out, '', ' and -q was added implicitly');
+ $tries = 0;
+-while (not -f "$TMP/pid" and $tries < 10) {
++while (not -f "$TMP/pid" and $tries < 100) {
+     select (undef, undef, undef, 0.1);
+     $tries++;
+ }
+@@ -106,7 +106,7 @@ is ($status, 0, 'Backgrounding krenew works');
+ is ($err, '', ' with no error output');
+ is ($out, '', ' and -q was added implicitly');
+ $tries = 0;
+-while (not -f "$TMP/pid" and $tries < 10) {
++while (not -f "$TMP/pid" and $tries < 100) {
+     select (undef, undef, undef, 0.1);
+     $tries++;
+ }
+@@ -146,7 +146,7 @@ if (!defined $pid) {
+         or BAIL_OUT ("can't run $KRENEW: $!");
+ }
+ $tries = 0;
+-while (not -f "$TMP/pid" and $tries < 10) {
++while (not -f "$TMP/pid" and $tries < 100) {
+     select (undef, undef, undef, 0.1);
+     $tries++;
+ }
+@@ -154,7 +154,11 @@ $pid = contents ("$TMP/pid");
+ ok (kill (0, $pid), 'krenew -K 30 started');
+ chmod 0555, $TMP or BAIL_OUT ("cannot chmod $TMP: $!");
+ kill (14, $pid) or warn "Can't kill $pid: $!\n";
+-select (undef, undef, undef, 0.5);
++$tries = 0;
++while (not -s "$TMP/krenew-errors" and $tries < 100) {
++    select (undef, undef, undef, 0.1);
++    $tries++;
++}
+ ok (kill (0, $pid), ' and it keeps running on a non-writeable cache');
+ chmod 0755, $TMP or BAIL_OUT ("cannot chmod $TMP: $!");
+ if (open (ERRORS, '<', "$TMP/krenew-errors")) {
+@@ -173,11 +177,20 @@ ok (!-f "$TMP/pid", ' and the PID file was removed');
+ is ($status, 0, 'krenew -xb works');
+ is ($err, '', ' with no error output');
+ is ($out, '', ' and no regular output');
++$tries = 0;
++while (not -f "$TMP/pid" and $tries < 100) {
++    select (undef, undef, undef, 0.1);
++    $tries++;
++}
+ $pid = contents ("$TMP/pid");
+ ok (kill (0, $pid), 'krenew -xb started');
+ chmod 0555, $TMP or BAIL_OUT ("cannot chmod $TMP: $!");
+ kill (14, $pid) or warn "Can't kill $pid: $!\n";
+-select (undef, undef, undef, 0.5);
++$tries = 0;
++while (kill (0, $pid) and $tries < 100) {
++    select (undef, undef, undef, 0.1);
++    $tries++;
++}
+ ok (!kill (0, $pid), ' and it exits on a non-writeable cache');
+ chmod 0755, $TMP or BAIL_OUT ("cannot chmod $TMP: $!");
+ unlink "$TMP/pid";
+@@ -191,7 +204,7 @@ is ($status, 0, 'Backgrounding krenew works');
+ is ($err, '', ' with no error output');
+ is ($out, '', ' and output was redirected properly');
+ $tries = 0;
+-while (not -f "$TMP/child-pid" and $tries < 10) {
++while (not -f "$TMP/child-pid" and $tries < 100) {
+     select (undef, undef, undef, 0.1);
+     $tries++;
+ }
+@@ -200,7 +213,7 @@ ok (kill (0, $pid), 'krenew is running');
+ $child = contents ("$TMP/child-pid");
+ ok (kill (0, $child), 'The child process is running');
+ $tries = 0;
+-while (not -S "$TMP/child-out" and $tries < 10) {
++while (not -s "$TMP/child-out" and $tries < 100) {
+     select (undef, undef, undef, 0.1);
+     $tries++;
+ }
+@@ -209,7 +222,11 @@ select (undef, undef, undef, 0.1);
+ kill (2, $pid) or warn "Cannot send INT to parent $pid: $!\n";
+ select (undef, undef, undef, 0.1);
+ kill (15, $pid) or warn "Cannot send TERM to parent $pid: $!\n";
+-select (undef, undef, undef, 0.2);
++$tries = 0;
++while (kill (0, $pid) and $tries < 100) {
++    select (undef, undef, undef, 0.1);
++    $tries++;
++}
+ ok (!kill (0, $pid), 'krenew is no longer running');
+ ok (!kill (0, $child), 'The child process is no longer running');
+ open (OUT, '<', "$TMP/child-out")
+@@ -236,7 +253,7 @@ is ($status, 0, 'Backgrounding krenew works');
+ is ($err, '', ' with no error output');
+ is ($out, '', ' and output was redirected properly');
+ $tries = 0;
+-while (not -f "$TMP/child-pid" and $tries < 10) {
++while (not -f "$TMP/child-pid" and $tries < 100) {
+     select (undef, undef, undef, 0.1);
+     $tries++;
+ }
+@@ -245,12 +262,16 @@ ok (kill (0, $pid), 'krenew is running');
+ $child = contents ("$TMP/child-pid");
+ ok (kill (0, $child), 'The child process is running');
+ $tries = 0;
+-while (not -S "$TMP/child-out" and $tries < 10) {
++while (not -s "$TMP/child-out" and $tries < 100) {
+     select (undef, undef, undef, 0.1);
+     $tries++;
+ }
+ kill (3, $pid) or warn "Cannot send QUIT to parent $pid: $!\n";
+-select (undef, undef, undef, 0.2);
++$tries = 0;
++while (kill (0, $pid) and $tries < 100) {
++    select (undef, undef, undef, 0.1);
++    $tries++;
++}
+ ok (!kill (0, $pid), 'krenew is no longer running');
+ ok (!kill (0, $child), 'The child process is no longer running');
+ open (OUT, '<', "$TMP/child-out")
+@@ -278,7 +299,7 @@ is ($status, 0, 'Backgrounding krenew works');
+ is ($err, '', ' with no error output');
+ is ($out, '', ' and output was redirected properly');
+ $tries = 0;
+-while (not -f "$TMP/child-pid" and $tries < 10) {
++while (not -f "$TMP/child-pid" and $tries < 100) {
+     select (undef, undef, undef, 0.1);
+     $tries++;
+ }
+@@ -287,11 +308,10 @@ ok (kill (0, $pid), 'krenew is running');
+ $child = contents ("$TMP/child-pid");
+ ok (kill (0, $child), 'The child process is running');
+ $tries = 0;
+-while (not -S "$TMP/child-out" and $tries < 10) {
++while (not -s "$TMP/child-out" and $tries < 100) {
+     select (undef, undef, undef, 0.1);
+     $tries++;
+ }
+-select (undef, undef, undef, 0.2);
+ open (OUT, '<', "$TMP/child-out")
+     or BAIL_OUT ("cannot open $TMP/child-out: $!");
+ is (scalar (<OUT>), "$child\n", 'Child PID is correct');
+@@ -323,7 +343,7 @@ is ($status, 0, 'Backgrounding krenew -s works');
+ is ($err, '', ' with no error output');
+ is ($out, '', ' and output was redirected properly');
+ $tries = 0;
+-while (not -f "$TMP/child-pid" and $tries < 10) {
++while (not -f "$TMP/child-pid" and $tries < 100) {
+     select (undef, undef, undef, 0.1);
+     $tries++;
+ }
+@@ -332,11 +352,10 @@ ok (kill (0, $pid), 'krenew is running');
+ $child = contents ("$TMP/child-pid");
+ ok (kill (0, $child), 'The child process is running');
+ $tries = 0;
+-while (not -S "$TMP/child-out" and $tries < 10) {
++while (not -s "$TMP/child-out" and $tries < 100) {
+     select (undef, undef, undef, 0.1);
+     $tries++;
+ }
+-select (undef, undef, undef, 0.2);
+ open (OUT, '<', "$TMP/child-out")
+     or BAIL_OUT ("cannot open $TMP/child-out: $!");
+ is (scalar (<OUT>), "$child\n", 'Child PID is correct');
+diff --git a/tests/krenew/errors-t b/tests/krenew/errors-t
+index 6a30f1f..0b6931f 100755
+--- a/tests/krenew/errors-t
++++ b/tests/krenew/errors-t
+@@ -2,7 +2,7 @@
+ #
+ # Tests for error handling in krenew.
+ #
+-# Written by Russ Allbery <rra@stanford.edu>
++# Written by Russ Allbery <eagle@eyrie.org>
+ # Copyright 2011, 2012
+ #     The Board of Trustees of the Leland Stanford Junior University
+ #
+diff --git a/tests/krenew/keyring-t b/tests/krenew/keyring-t
+index 4d8bf93..c42a745 100755
+--- a/tests/krenew/keyring-t
++++ b/tests/krenew/keyring-t
+@@ -2,8 +2,8 @@
+ #
+ # Tests for krenew support of keyrings.
+ #
+-# Written by Russ Allbery <rra@stanford.edu>
+-# Copyright 2011
++# Written by Russ Allbery <eagle@eyrie.org>
++# Copyright 2011, 2014
+ #     The Board of Trustees of the Leland Stanford Junior University
+ #
+ # See LICENSE for licensing terms.
+@@ -31,7 +31,7 @@ if (not -f "$DATA/test.keytab" or not -f "$DATA/test.principal") {
+         plan skip_all => 'cannot get renewable tickets in keyring';
+         exit 0;
+     }
+-    unless (!-f 'KEYRING:test') {
++    unless (!-f 'KEYRING:test' && klist ()) {
+         plan skip_all => 'cannot use keyring caches';
+         exit 0;
+     }
+diff --git a/tests/krenew/non-renewable-t b/tests/krenew/non-renewable-t
+index e6e8787..b53dc90 100755
+--- a/tests/krenew/non-renewable-t
++++ b/tests/krenew/non-renewable-t
+@@ -6,7 +6,7 @@
+ # with a non-renewable ticket that nonetheless has sufficient renaming
+ # lifespan.
+ #
+-# Written by Russ Allbery <rra@stanford.edu>
++# Written by Russ Allbery <eagle@eyrie.org>
+ # Copyright 2012
+ #     The Board of Trustees of the Leland Stanford Junior University
+ #
+diff --git a/tests/libtest.pl b/tests/libtest.pl
+index e4cfa6c..c1eb477 100644
+--- a/tests/libtest.pl
++++ b/tests/libtest.pl
+@@ -4,7 +4,7 @@
+ # suite programs.  These are intentionally put into the main package rather
+ # than in a separate namespace.
+ #
+-# Written by Russ Allbery <rra@stanford.edu>
++# Written by Russ Allbery <eagle@eyrie.org>
+ # Copyright 2007, 2008, 2009
+ #     The Board of Trustees of the Leland Stanford Junior University
+ #
+@@ -86,7 +86,7 @@ sub klist {
+     unless ($flags) {
+         ($flags) = ($output =~ / Flags\s+Principal\n(?:\S+\s+){6}(\S+)/);
+     }
+-    return ($default, $service, $flags);
++    return wantarray ? ($default, $service, $flags) : $default;
+ }
+ 
+ # Run tokens and return true if we have an AFS token, false otherwise.
+diff --git a/tests/portable/asprintf-t.c b/tests/portable/asprintf-t.c
+index 4513a85..c61c14a 100644
+--- a/tests/portable/asprintf-t.c
++++ b/tests/portable/asprintf-t.c
+@@ -4,7 +4,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  *
+  * The authors hereby relinquish any claim to any copyright that they may have
+  * in this work, whether granted under contract or by operation of law or
+diff --git a/tests/portable/daemon-t.c b/tests/portable/daemon-t.c
+index 9f62732..c8253bf 100644
+--- a/tests/portable/daemon-t.c
++++ b/tests/portable/daemon-t.c
+@@ -4,7 +4,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  *
+  * The authors hereby relinquish any claim to any copyright that they may have
+  * in this work, whether granted under contract or by operation of law or
+diff --git a/tests/portable/mkstemp-t.c b/tests/portable/mkstemp-t.c
+index 98c708e..20a83fc 100644
+--- a/tests/portable/mkstemp-t.c
++++ b/tests/portable/mkstemp-t.c
+@@ -4,7 +4,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  *
+  * The authors hereby relinquish any claim to any copyright that they may have
+  * in this work, whether granted under contract or by operation of law or
+diff --git a/tests/portable/setenv-t.c b/tests/portable/setenv-t.c
+index a1aecb5..15ed1fd 100644
+--- a/tests/portable/setenv-t.c
++++ b/tests/portable/setenv-t.c
+@@ -4,7 +4,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  *
+  * The authors hereby relinquish any claim to any copyright that they may have
+  * in this work, whether granted under contract or by operation of law or
+diff --git a/tests/portable/snprintf-t.c b/tests/portable/snprintf-t.c
+index 927de96..270d2e1 100644
+--- a/tests/portable/snprintf-t.c
++++ b/tests/portable/snprintf-t.c
+@@ -4,9 +4,9 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  * Copyright 2000, 2001, 2002, 2003, 2004, 2005, 2006
+- *     Russ Allbery <rra@stanford.edu>
++ *     Russ Allbery <eagle@eyrie.org>
+  * Copyright 2009, 2010
+  *     The Board of Trustees of the Leland Stanford Junior University
+  * Copyright 1995 Patrick Powell
+diff --git a/tests/portable/strlcat-t.c b/tests/portable/strlcat-t.c
+index 54d0d40..58aba58 100644
+--- a/tests/portable/strlcat-t.c
++++ b/tests/portable/strlcat-t.c
+@@ -4,7 +4,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  *
+  * The authors hereby relinquish any claim to any copyright that they may have
+  * in this work, whether granted under contract or by operation of law or
+diff --git a/tests/portable/strlcpy-t.c b/tests/portable/strlcpy-t.c
+index 26aa8f2..6652a7c 100644
+--- a/tests/portable/strlcpy-t.c
++++ b/tests/portable/strlcpy-t.c
+@@ -4,7 +4,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  *
+  * The authors hereby relinquish any claim to any copyright that they may have
+  * in this work, whether granted under contract or by operation of law or
+diff --git a/tests/portable/strndup-t.c b/tests/portable/strndup-t.c
+index 818546d..fa22cf0 100644
+--- a/tests/portable/strndup-t.c
++++ b/tests/portable/strndup-t.c
+@@ -4,7 +4,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  *
+  * The authors hereby relinquish any claim to any copyright that they may have
+  * in this work, whether granted under contract or by operation of law or
+diff --git a/tests/runtests.c b/tests/runtests.c
+index 3435a50..50277fa 100644
+--- a/tests/runtests.c
++++ b/tests/runtests.c
+@@ -55,7 +55,7 @@
+  * Harness <http://www.eyrie.org/~eagle/software/c-tap-harness/>.
+  *
+  * Copyright 2000, 2001, 2004, 2006, 2007, 2008, 2009, 2010, 2011
+- *     Russ Allbery <rra@stanford.edu>
++ *     Russ Allbery <eagle@eyrie.org>
+  *
+  * Permission is hereby granted, free of charge, to any person obtaining a
+  * copy of this software and associated documentation files (the "Software"),
+diff --git a/tests/tap/basic.c b/tests/tap/basic.c
+index c2f3355..475d335 100644
+--- a/tests/tap/basic.c
++++ b/tests/tap/basic.c
+@@ -12,7 +12,7 @@
+  * This file is part of C TAP Harness.  The current version plus supporting
+  * documentation is at <http://www.eyrie.org/~eagle/software/c-tap-harness/>.
+  *
+- * Copyright 2009, 2010, 2011 Russ Allbery <rra@stanford.edu>
++ * Copyright 2009, 2010, 2011 Russ Allbery <eagle@eyrie.org>
+  * Copyright 2001, 2002, 2004, 2005, 2006, 2007, 2008, 2011
+  *     The Board of Trustees of the Leland Stanford Junior University
+  *
+diff --git a/tests/tap/basic.h b/tests/tap/basic.h
+index 313f147..60ac2e0 100644
+--- a/tests/tap/basic.h
++++ b/tests/tap/basic.h
+@@ -4,7 +4,7 @@
+  * This file is part of C TAP Harness.  The current version plus supporting
+  * documentation is at <http://www.eyrie.org/~eagle/software/c-tap-harness/>.
+  *
+- * Copyright 2009, 2010, 2011 Russ Allbery <rra@stanford.edu>
++ * Copyright 2009, 2010, 2011 Russ Allbery <eagle@eyrie.org>
+  * Copyright 2001, 2002, 2004, 2005, 2006, 2007, 2008, 2011
+  *     The Board of Trustees of the Leland Stanford Junior University
+  *
+diff --git a/tests/tap/libtap.sh b/tests/tap/libtap.sh
+index 07a4c61..c6e65fd 100644
+--- a/tests/tap/libtap.sh
++++ b/tests/tap/libtap.sh
+@@ -4,8 +4,8 @@
+ # writing test cases.  It is part of C TAP Harness, which can be found at
+ # <http://www.eyrie.org/~eagle/software/c-tap-harness/>.
+ #
+-# Written by Russ Allbery <rra@stanford.edu>
+-# Copyright 2009, 2010, 2011 Russ Allbery <rra@stanford.edu>
++# Written by Russ Allbery <eagle@eyrie.org>
++# Copyright 2009, 2010, 2011 Russ Allbery <eagle@eyrie.org>
+ # Copyright 2006, 2007, 2008
+ #     The Board of Trustees of the Leland Stanford Junior University
+ #
+diff --git a/tests/tap/process.c b/tests/tap/process.c
+index 83baee2..2a42f8d 100644
+--- a/tests/tap/process.c
++++ b/tests/tap/process.c
+@@ -10,8 +10,8 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
+- * Copyright 2002, 2004, 2005 Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
++ * Copyright 2002, 2004, 2005 Russ Allbery <eagle@eyrie.org>
+  * Copyright 2009, 2010, 2011
+  *     The Board of Trustees of the Leland Stanford Junior University
+  *
+diff --git a/tests/tap/process.h b/tests/tap/process.h
+index cd4eadc..23fae25 100644
+--- a/tests/tap/process.h
++++ b/tests/tap/process.h
+@@ -4,7 +4,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  * Copyright 2009, 2010
+  *     The Board of Trustees of the Leland Stanford Junior University
+  *
+diff --git a/tests/tap/string.c b/tests/tap/string.c
+index efd49c5..d900f8e 100644
+--- a/tests/tap/string.c
++++ b/tests/tap/string.c
+@@ -7,7 +7,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Copyright 2011 Russ Allbery <rra@stanford.edu>
++ * Copyright 2011 Russ Allbery <eagle@eyrie.org>
+  *
+  * Permission is hereby granted, free of charge, to any person obtaining a
+  * copy of this software and associated documentation files (the "Software"),
+diff --git a/tests/tap/string.h b/tests/tap/string.h
+index dc6d156..1110169 100644
+--- a/tests/tap/string.h
++++ b/tests/tap/string.h
+@@ -7,7 +7,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Copyright 2011 Russ Allbery <rra@stanford.edu>
++ * Copyright 2011 Russ Allbery <eagle@eyrie.org>
+  *
+  * Permission is hereby granted, free of charge, to any person obtaining a
+  * copy of this software and associated documentation files (the "Software"),
+diff --git a/tests/util/concat-t.c b/tests/util/concat-t.c
+index 384af3a..c670d66 100644
+--- a/tests/util/concat-t.c
++++ b/tests/util/concat-t.c
+@@ -4,7 +4,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  *
+  * The authors hereby relinquish any claim to any copyright that they may have
+  * in this work, whether granted under contract or by operation of law or
+diff --git a/tests/util/messages-krb5-t.c b/tests/util/messages-krb5-t.c
+index e3ffe75..8e9daf1 100644
+--- a/tests/util/messages-krb5-t.c
++++ b/tests/util/messages-krb5-t.c
+@@ -4,7 +4,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  * Copyright 2010, 2011
+  *     The Board of Trustees of the Leland Stanford Junior University
+  *
+diff --git a/tests/util/messages-t.c b/tests/util/messages-t.c
+index aeeda1a..1a0d989 100644
+--- a/tests/util/messages-t.c
++++ b/tests/util/messages-t.c
+@@ -4,8 +4,8 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
+- * Copyright 2002, 2004, 2005 Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
++ * Copyright 2002, 2004, 2005 Russ Allbery <eagle@eyrie.org>
+  * Copyright 2009, 2010, 2011
+  *     The Board of Trustees of the Leland Stanford Junior University
+  *
+diff --git a/tests/util/xmalloc-t b/tests/util/xmalloc-t
+index 4dadc65..7560c86 100755
+--- a/tests/util/xmalloc-t
++++ b/tests/util/xmalloc-t
+@@ -5,8 +5,8 @@
+ # The canonical version of this file is maintained in the rra-c-util package,
+ # which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+ #
+-# Written by Russ Allbery <rra@stanford.edu>
+-# Copyright 2000, 2001, 2006 Russ Allbery <rra@stanford.edu>
++# Written by Russ Allbery <eagle@eyrie.org>
++# Copyright 2000, 2001, 2006 Russ Allbery <eagle@eyrie.org>
+ # Copyright 2008, 2009, 2010
+ #     The Board of Trustees of the Leland Stanford Junior University
+ #
+diff --git a/tests/util/xmalloc.c b/tests/util/xmalloc.c
+index 14e5fed..fa194ce 100644
+--- a/tests/util/xmalloc.c
++++ b/tests/util/xmalloc.c
+@@ -4,7 +4,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Copyright 2000, 2001, 2006 Russ Allbery <rra@stanford.edu>
++ * Copyright 2000, 2001, 2006 Russ Allbery <eagle@eyrie.org>
+  * Copyright 2008
+  *     The Board of Trustees of the Leland Stanford Junior University
+  *
+diff --git a/util/command.c b/util/command.c
+index b32cdcd..1d93171 100644
+--- a/util/command.c
++++ b/util/command.c
+@@ -3,7 +3,7 @@
+  *
+  * Run a command, possibly a long-running one for which we need to wait.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  * Copyright 1995, 1996, 1997, 1999, 2000, 2001, 2002, 2004, 2005, 2007,
+  *     2008, 2009
+  *     The Board of Trustees of the Leland Stanford Junior. University
+diff --git a/util/command.h b/util/command.h
+index 8c9a097..a65bad4 100644
+--- a/util/command.h
++++ b/util/command.h
+@@ -1,7 +1,7 @@
+ /*
+  * Prototypes for shared command handling.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  * Copyright 1995, 1996, 1997, 1999, 2000, 2001, 2002, 2004, 2005, 2007,
+  *     2008, 2009, 2010
+  *     THe Board of Trustees of the Leland Stanford Junior University
+diff --git a/util/concat.c b/util/concat.c
+index fb4afa8..bc7d4b6 100644
+--- a/util/concat.c
++++ b/util/concat.c
+@@ -21,7 +21,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  *
+  * The authors hereby relinquish any claim to any copyright that they may have
+  * in this work, whether granted under contract or by operation of law or
+diff --git a/util/concat.h b/util/concat.h
+index 960f242..d02b568 100644
+--- a/util/concat.h
++++ b/util/concat.h
+@@ -4,7 +4,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  *
+  * The authors hereby relinquish any claim to any copyright that they may have
+  * in this work, whether granted under contract or by operation of law or
+diff --git a/util/macros.h b/util/macros.h
+index 54faee5..d071793 100644
+--- a/util/macros.h
++++ b/util/macros.h
+@@ -4,7 +4,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  *
+  * The authors hereby relinquish any claim to any copyright that they may have
+  * in this work, whether granted under contract or by operation of law or
+diff --git a/util/messages-krb5.c b/util/messages-krb5.c
+index 4337fe6..0e92b74 100644
+--- a/util/messages-krb5.c
++++ b/util/messages-krb5.c
+@@ -8,7 +8,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  * Copyright 2006, 2007, 2008, 2009, 2010
+  *     The Board of Trustees of the Leland Stanford Junior University
+  *
+diff --git a/util/messages-krb5.h b/util/messages-krb5.h
+index a61d7cd..a9072bf 100644
+--- a/util/messages-krb5.h
++++ b/util/messages-krb5.h
+@@ -4,7 +4,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  * Copyright 2006, 2007, 2008, 2009, 2010
+  *     The Board of Trustees of the Leland Stanford Junior University
+  *
+diff --git a/util/messages.c b/util/messages.c
+index 52fcfb7..9ec3ba8 100644
+--- a/util/messages.c
++++ b/util/messages.c
+@@ -53,7 +53,7 @@
+  * The canonical version of this file is maintained in the rra-c-util package,
+  * which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
+  *
+- * Written by Russ Allbery <rra@stanford.edu>
++ * Written by Russ Allbery <eagle@eyrie.org>
+  * Copyright 2008, 2009, 2010
+  *     The Board of Trustees of the Leland Stanford Junior University
+  * Copyright (c) 2004, 2005, 2006

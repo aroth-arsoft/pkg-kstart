@@ -19,8 +19,8 @@
  * information between k5start and krenew.  The code specific to one or the
  * other is handled via callbacks.
  *
- * Written by Russ Allbery <rra@stanford.edu>
- * Copyright 2006, 2007, 2008, 2009, 2010, 2011, 2012
+ * Written by Russ Allbery <eagle@eyrie.org>
+ * Copyright 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2014
  *     The Board of Trustees of the Leland Stanford Junior University
  *
  * See LICENSE for licensing terms.
@@ -169,7 +169,7 @@ ticket_expired(krb5_context ctx, struct config *config)
         now = time(NULL);
         then = outcreds->times.endtime;
         if (config->happy_ticket > 0)
-            offset = 60 * config->happy_ticket;
+            offset = 60 * (config->keep_ticket + config->happy_ticket);
         else
             offset = 60 * config->keep_ticket + EXPIRE_FUDGE;
         if (then < now + offset)
@@ -344,7 +344,6 @@ run_framework(krb5_context ctx, struct config *config)
     if (config->keep_ticket > 0) {
         struct timeval timeout;
 
-        code = 0;
         add_handler(ctx, config, alarm_handler, SIGALRM, "SIGALRM");
         if (config->command == NULL) {
             add_handler(ctx, config, exit_handler, SIGHUP, "SIGHUP");
@@ -368,7 +367,7 @@ run_framework(krb5_context ctx, struct config *config)
             if (exit_signaled)
                 exit_cleanup(ctx, config, 0);
             code = ticket_expired(ctx, config);
-            if (alarm_signaled || code != 0) {
+            if (alarm_signaled || config->always_renew || code != 0) {
                 code = config->auth(ctx, config, code);
                 if (code != 0 && config->exit_errors)
                     exit_cleanup(ctx, config, 1);

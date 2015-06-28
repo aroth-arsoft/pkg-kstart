@@ -10,9 +10,9 @@
  * the Kerberos v5 initialization functions instead.
  *
  * Originally written by Robert Morgan and Booker C. Bense.
- * Substantial updates by Russ Allbery <rra@stanford.edu>
+ * Substantial updates by Russ Allbery <eagle@eyrie.org>
  * Copyright 1995, 1996, 1997, 1999, 2000, 2001, 2002, 2004, 2005, 2006, 2007,
- *     2008, 2009, 2010, 2011, 2012
+ *     2008, 2009, 2010, 2011, 2012, 2014
  *     The Board of Trustees of the Leland Stanford Junior University
  *
  * See LICENSE for licensing terms.
@@ -68,6 +68,7 @@ Usage: k5start [options] [name [command]]\n\
    -I <service instance>        (default: realm name)\n\
    -r <service realm>           (default: local realm)\n\
 \n\
+   -a                   Renew on each wakeup when running as a daemon\n\
    -b                   Fork and run in the background\n\
    -c <file>            Write child process ID (PID) to <file>\n\
    -F                   Force non-forwardable tickets\n\
@@ -77,7 +78,7 @@ Usage: k5start [options] [name [command]]\n\
                         less than <limit> minutes, and exit 0 if it's okay,\n\
                         otherwise obtain a ticket\n\
    -h                   Display this usage message and exit\n\
-   -K <interval>        Run as daemon, renew ticket every <interval> minutes\n\
+   -K <interval>        Run as daemon, check ticket every <interval> minutes\n\
                         (implies -q unless -v is given)\n\
    -k <file>            Use <file> as the ticket cache\n\
    -L                   Log messages via syslog as well as stderr\n\
@@ -167,6 +168,7 @@ authenticate(krb5_context ctx, struct config *config,
     krb5_creds creds;
     const char *cache = config->cache;
     krb5_ccache ccache = NULL;
+    int oerrno;
 
     /*
      * If we have owner, group, or mode information, we have to create a
@@ -186,7 +188,9 @@ authenticate(krb5_context ctx, struct config *config,
         }
         if (fchmod(fd, 0600) < 0) {
             syswarn("cannot chmod temporary ticket cache file");
-            return errno;
+            oerrno = errno;
+            unlink(tmp);
+            return oerrno;
         }
         close(fd);
         cache = tmp;
@@ -213,7 +217,7 @@ authenticate(krb5_context ctx, struct config *config,
         if (code != 0) {
             warn_krb5(ctx, code, "error resolving keytab %s",
                       private->keytab);
-            return code;
+            goto done;
         }
         code = krb5_get_init_creds_keytab(ctx, &creds, config->client,
                                           keytab, 0, private->service,
@@ -234,7 +238,8 @@ authenticate(krb5_context ctx, struct config *config,
             *p = '\0';
         else {
             warn("password too long");
-            return KRB5_LIBOS_CANTREADPWD;
+            code = KRB5_LIBOS_CANTREADPWD;
+            goto done;
         }
         code = krb5_get_init_creds_password(ctx, &creds, config->client,
                                             buffer, NULL, NULL, 0,
@@ -274,11 +279,17 @@ authenticate(krb5_context ctx, struct config *config,
         code = set_permissions(cache, private);
         if (code != 0)
             goto done;
-        if (rename(cache, config->cache) < 0)
+        if (rename(cache, config->cache) < 0) {
             code = errno;
+            goto done;
+        }
     }
 
 done:
+    /* If we failed and were generating a separate cache, unlink it. */
+    if (private->set_perms)
+        unlink(cache);
+
     /* Make sure that we don't free princ; we use it later. */
     if (creds.client == config->client)
         creds.client = NULL;
@@ -375,9 +386,10 @@ main(int argc, char *argv[])
     struct group *gr;
     krb5_context ctx;
     krb5_deltat life_secs;
+    bool run_as_daemon;
     bool search_keytab = false;
     static const char optstring[]
-        = "bc:Ff:g:H:hI:i:K:k:Ll:m:no:Pp:qr:S:stUu:vx";
+        = "abc:Ff:g:H:hI:i:K:k:Ll:m:no:Pp:qr:S:stUu:vx";
 
     /* Initialize logging. */
     message_program_name = "k5start";
@@ -391,6 +403,7 @@ main(int argc, char *argv[])
     private.group = (gid_t) -1;
     while ((opt = getopt(argc, argv, optstring)) != EOF)
         switch (opt) {
+        case 'a': config.always_renew = true;   break;
         case 'b': config.background = true;     break;
         case 'c': config.childfile = optarg;    break;
         case 'F': nonforwardable = true;        break;
@@ -432,6 +445,7 @@ main(int argc, char *argv[])
             config.keep_ticket = convert_number(optarg, 10);
             if (config.keep_ticket <= 0)
                 die("-K interval argument %s invalid", optarg);
+            config.ignore_errors = true;
             break;
         case 'L':
             openlog(message_program_name, LOG_PID, LOG_DAEMON);
@@ -492,6 +506,10 @@ main(int argc, char *argv[])
     if (argc >= 1)  
         config.command = argv;
 
+    /* If -x was given, we still want to exit on initial auth failure. */
+    if (config.exit_errors)
+        config.ignore_errors = false;
+
     /*
      * If an owner was provided but no group, and the owner was given as a
      * username, set the group to the primary group of that user.
@@ -500,9 +518,12 @@ main(int argc, char *argv[])
         private.group = pw->pw_gid;
 
     /* Check the arguments for consistency. */
+    run_as_daemon = (config.keep_ticket != 0 || config.command != NULL);
+    if (config.always_renew && run_as_daemon)
+        die("-a only makes sense with -K or a command to run");
     if (config.background && private.keytab == NULL)
         die("-b option requires a keytab be specified with -f");
-    if (config.background && config.keep_ticket == 0 && config.command == NULL)
+    if (config.background && run_as_daemon)
         die("-b only makes sense with -K or a command to run");
     if (config.keep_ticket > 0 && private.keytab == NULL)
         die("-K option requires a keytab be specified with -f");
@@ -517,8 +538,6 @@ main(int argc, char *argv[])
         die("-U option requires a keytab be specified with -f");
     if (search_keytab && (principal != NULL || inst != NULL))
         die("-U option cannot be used with -u or -i options");
-    if (config.happy_ticket > 0 && config.keep_ticket > 0)
-        die("-H and -K options cannot be used at the same time");
     if (config.happy_ticket > 0 && config.command != NULL)
         die("-H option cannot be used with a command");
     if (config.childfile != NULL && config.command == NULL)

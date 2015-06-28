@@ -1,5 +1,27 @@
                        User-Visible kstart Changes
 
+kstart 4.2 (unreleased)
+
+    k5start, when run with the -K option to run as a daemon, no longer
+    exits if the initial authentication fails (unless -x was given).
+    Instead, it reports the error to standard error and then continues to
+    run, attempting authentication every minute as if authentication had
+    failed after it had started.  Patch from Rasmus Borup Hansen.
+
+    If -i is given to krenew and the initial ticket renewal failed, start
+    with the shorter wake-up interval of one minute just as if a
+    subsequent renewal failed.  Patch from Rasmus Borup Hansen.
+
+    Clean up the temporary ticket cache on k5start failure if -o, -g, or
+    -m were given.  Based on a patch by Rasmus Borup Hansen.
+
+    The -H flag to k5start or krenew may now be used in conjunction with
+    -K and controls whether the ticket is renewed when the command wakes
+    up.  Normally, the ticket will be renewed if it will expire sooner
+    than two minutes after the next time the command will wake up.  If -H
+    is specified, its value replaces the default value of two minutes.
+    Patch from Michael Lass.
+
 kstart 4.1 (2012-01-07)
 
     Fix a regression introduced in kstart 4.0 that caused k5start -H and
@@ -112,7 +134,7 @@ kstart 4.0 (2011-12-29)
     * Improve test summary at the end of a C test case.
     * Flush stderr before printing TAP output.
     * Improve portability of output functions in the shell libtap.sh.
-    * Add notices to all files copied from  C TAP Harness.
+    * Add notices to all files copied from C TAP Harness.
 
 kstart 3.16 (2010-01-19)
 
